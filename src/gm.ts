@@ -36,7 +36,7 @@ export function loadGM(p: number, ctx?: BaseAudioContext): Promise<boolean> {
     const obj: Record<string, string> = JSON.parse(txt.slice(txt.indexOf('{', txt.indexOf('Soundfont.' + GM[p])), txt.lastIndexOf('}') + 1).replace(/,\s*}$/, '}'));
     const bank = new Map<number, AudioBuffer>();
     await Promise.all(Object.entries(obj).map(async ([k, v]) => { const m = nameToMidi(k); if (m < 0) return;
-      const bin = Uint8Array.from(atob(v.split(',')[1]), c => c.charCodeAt(0));
+      const bin = new Uint8Array(await (await fetch(v)).arrayBuffer());
       try { bank.set(m, await dctx!.decodeAudioData(bin.buffer)); } catch { /* skip bad note */ } }));
     if (!bank.size) return false; banks.set(p, bank); return true;
   } catch { pending.delete(p); return false; } })();

@@ -10,7 +10,7 @@
    <button id="revert" class="ghost" title="Undo polish, back to exactly what you hummed">↺ Raw</button></div>
   <button id="play" class="step-btn"><i>▶</i><b>Play</b><em>4</em></button>
   <details id="exportmenu" class="step-btn-wrap"><summary class="step-btn"><i>⬇</i><b>Export</b><em>5</em></summary>
-   <div class="menu"><button id="xwav">Full mix · WAV</button><button id="xmid">Song · MIDI (all tracks)</button><button id="xtwav">This track · WAV</button><button id="xtmid">This track · MIDI</button><button id="xall">Each track · MIDI files</button><hr><button id="xjson">Save project file</button><label class="file">Open project file<input id="ijson" type="file" accept=".json"></label><button id="new">New project</button></div></details>
+   <div class="menu"><button id="xwav">Song · WAV audio</button><button id="xmid">Song · MIDI</button><hr><small class="hint">Project</small><button id="xjson">Save project file</button><label class="file">Open project file<input id="ijson" type="file" accept=".json"></label><button id="new">New project</button></div></details>
  </nav>
  <div class="song"><button id="rewind" class="ghost" title="Back to start">⏮</button><span id="pos" class="lcd">1.1</span>
   <label>BPM<input id="bpm" type="number" min="40" max="240"></label><label>Key<select id="key"></select><select id="scale"></select></label>
@@ -23,7 +23,6 @@
  <label class="chk"><input id="autopolish" type="checkbox" checked>Auto-polish after recording</label>
  <label>Polish grid<select id="pgrid"><option value="1">1/4</option><option value="0.5">1/8</option><option value="0.25">1/16</option></select></label>
  <label title="Time between your voice and the detected note; notes are shifted earlier by this">Latency fix<input id="lat" type="range" min="0" max="300"><span id="latv"></span></label>
- <label>MIDI out<select id="midiout"></select></label>
 </div>
 <main>
  <aside id="hum" class="card">
@@ -33,8 +32,7 @@
   <div class="meter"><div id="lvl"></div></div>
   <label class="chk"><input id="snap" type="checkbox" checked>Snap to key</label><label class="chk"><input id="humplay" type="checkbox" checked>Hear synth while humming</label>
   <div class="adv advcol"><label>Noise gate<input id="gate" type="range" min="2" max="100" value="15"></label><label>Confidence<input id="conf" type="range" min="50" max="99" value="85"></label>
-   <label>Voice octave<select id="humoct"><option value="-2">-2</option><option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option><option value="2">+2</option></select></label>
-   <div id="fx" class="fx"></div></div>
+   <label>Voice octave<select id="humoct"><option value="-2">-2</option><option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option><option value="2">+2</option></select></label></div>
   <p class="hint">Keys <kbd>A</kbd>–<kbd>K</kbd> play notes · <kbd>Z</kbd>/<kbd>X</kbd> octave · <kbd>Space</kbd> play · <kbd>R</kbd> record</p>
  </aside>
  <section class="card grow">

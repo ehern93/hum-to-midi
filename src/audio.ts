@@ -66,25 +66,14 @@ function impulse(ctx: BaseAudioContext, secs = 2.5) {
   for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 3); }
   return b;
 }
-function distCurve(k: number) { const n = 1024, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i*2/n-1; c[i] = ((1+k)*x)/(1+k*Math.abs(x)); } return c; }
 export interface Strip { input: GainNode; gain: GainNode; pan: StereoPannerNode; update(fx: FX, vol: number, pan: number, on: boolean): void }
-export function makeStrip(ctx: BaseAudioContext, master: AudioNode, bpm: number): Strip {
-  const input = ctx.createGain(); const shaper = ctx.createWaveShaper(); const filt = ctx.createBiquadFilter(); filt.type = 'lowpass';
-  const dry = ctx.createGain(); const chDelay = ctx.createDelay(0.05); chDelay.delayTime.value = 0.015; const chG = ctx.createGain();
-  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.8; const lfoG = ctx.createGain(); lfoG.gain.value = 0.004; lfo.connect(lfoG).connect(chDelay.delayTime); lfo.start();
-  const gain = ctx.createGain(); const pan = ctx.createStereoPanner();
-  const conv = ctx.createConvolver(); conv.buffer = impulse(ctx); const revG = ctx.createGain();
-  const dl = ctx.createDelay(2); dl.delayTime.value = (60 / bpm) * 0.75; const fb = ctx.createGain(); fb.gain.value = 0.35; const dlG = ctx.createGain();
-  input.connect(shaper).connect(filt); filt.connect(dry).connect(gain); filt.connect(chDelay).connect(chG).connect(gain);
-  gain.connect(pan).connect(master);
-  pan.connect(revG).connect(conv).connect(master);
-  pan.connect(dlG).connect(dl); dl.connect(fb).connect(dl); dl.connect(master);
-  return { input, gain, pan, update(fx, vol, p, on) {
-    shaper.curve = fx.dist > 0 ? distCurve(fx.dist * 60) : null;
-    filt.frequency.value = 200 * Math.pow(100, fx.filter); // 0..1 => 200..20000
-    chG.gain.value = fx.chorus * 0.7; revG.gain.value = fx.reverb * 0.8; dlG.gain.value = fx.delay * 0.6;
-    gain.gain.value = on ? vol : 0; pan.pan.value = p;
-  } };
+const verbs = new WeakMap<AudioNode, AudioNode>();
+function sharedVerb(ctx: BaseAudioContext, master: AudioNode) { let v = verbs.get(master); if (!v) { const conv = ctx.createConvolver(); conv.buffer = impulse(ctx, 1.4); conv.connect(master); v = conv; verbs.set(master, v); } return v; }
+// light channel strip: volume + pan + a send to ONE shared reverb (was a full FX chain per track)
+export function makeStrip(ctx: BaseAudioContext, master: AudioNode, _bpm: number): Strip {
+  const input = ctx.createGain(); const gain = ctx.createGain(); const pan = ctx.createStereoPanner(); const revG = ctx.createGain();
+  input.connect(gain).connect(pan).connect(master); pan.connect(revG).connect(sharedVerb(ctx, master));
+  return { input, gain, pan, update(fx, vol, p, on) { revG.gain.value = (fx?.reverb ?? 0.15) * 0.6; gain.gain.value = on ? vol : 0; pan.pan.value = p; } };
 }
 export function encodeWav(buf: AudioBuffer): Blob {
   const ch = buf.numberOfChannels, sr = buf.sampleRate, n = buf.length; const dv = new DataView(new ArrayBuffer(44 + n * ch * 2));
