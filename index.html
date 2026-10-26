@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HumStudio · hum-to-MIDI mini DAW</title></head><body>
+<header><h1>🎵 HumStudio</h1>
+ <div class="tp"><button id="rewind">⏮</button><button id="play">▶ Play</button><button id="rec">● Rec</button><span id="pos" class="lcd">1.1.1</span>
+ <label>BPM<input id="bpm" type="number" min="40" max="240"></label><label>Key<select id="key"></select></label><select id="scale"></select>
+ <label>Transpose<input id="transpose" type="number" min="-24" max="24" value="0"></label><label>Bars<input id="bars" type="number" min="1" max="128"></label>
+ <label><input id="loop" type="checkbox">Loop</label><label><input id="metro" type="checkbox" checked>Click(rec)</label><label><input id="metroplay" type="checkbox">Click(play)</label><label><input id="countin" type="checkbox" checked>Count-in</label>
+ <label>Rec quantize<select id="recq"><option value="0">off</option><option value="1">1/4</option><option value="0.5">1/8</option><option value="0.25" selected>1/16</option></select></label>
+ <select id="midiout"></select></div></header>
+<main>
+<section id="hum" class="panel"><b>Hum / Sing</b><button id="mic">🎤 Start mic</button>
+ <div class="big"><span id="hnote">—</span><span id="hout">—</span></div><div class="tuner"><div id="needle"></div></div>
+ <div class="row"><span id="hfreq">0 Hz</span><span id="hcents">0¢</span><span id="hconf">silent</span></div><div class="meter"><div id="lvl"></div></div>
+ <label>Noise gate<input id="gate" type="range" min="2" max="100" value="15"></label><label>Confidence<input id="conf" type="range" min="50" max="99" value="85"></label>
+ <label><input id="snap" type="checkbox" checked>Snap to key/scale</label><label><input id="humplay" type="checkbox" checked>Play synth while humming</label>
+ <label>Octave shift<select id="humoct"><option value="-2">-2</option><option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option><option value="2">+2</option></select></label>
+ <p class="hint">Arm a track (●), press Rec (or R), hum. Keys: A W S E D F T G Y H U J K = notes, Z/X octave, Space play/stop.</p>
+ <div id="fx" class="fx"></div></section>
+<section class="panel grow"><div class="row"><b>Tracks</b><select id="newinst"></select><button id="addtrack">+ Track</button><span class="sp"></span>
+ <button id="new">New</button><button id="xjson">Save project</button><label class="file">Open<input id="ijson" type="file" accept=".json"></label></div>
+ <div class="arr"><div id="tracks"></div><div id="tlwrap" class="scroll"><div class="rel"><canvas id="timeline"></canvas><div id="ph1" class="ph"></div></div></div></div>
+ <p class="hint">Timeline: click = move playhead / select track · drag the top ruler (or shift-drag) = set loop region.</p>
+ <div id="rollwrap"><div class="row"><b>Piano roll</b><label>Grid<select id="grid"><option value="1">1/4</option><option value="0.5">1/8</option><option value="0.25" selected>1/16</option></select></label>
+  <button id="quant">Quantize</button><button id="snapall">Snap to scale</button><button id="tdn">−1 st</button><button id="tup">+1 st</button><button id="clear">Clear</button>
+  <span class="hint">click = add · drag = move · drag right edge = resize · right-click / dbl-click / Del = delete</span></div>
+  <div class="scroll roll"><div class="rel"><canvas id="roll"></canvas><div id="ph2" class="ph"></div></div></div></div>
+ <div id="stepwrap"><div class="row"><b>Drum machine</b><button id="sprev">◀</button><span id="stepbar"></span><button id="snext">▶</button><button id="scopy">Copy this bar to all bars</button></div><div id="steps"></div></div>
+ <div class="row export"><b>Export</b><button id="xwav">⬇ Mix WAV</button><button id="xmid">⬇ Song MIDI (all tracks)</button><button id="xtwav">⬇ Track WAV</button><button id="xtmid">⬇ Track MIDI</button><button id="xall">⬇ Every track as MIDI</button><span id="status" class="hint"></span></div>
+</section></main>
+<footer><div class="scroll"><div id="keyboard"></div></div></footer>
+<script type="module" src="/src/main.ts"></script>
+<script>document.getElementById('newinst').innerHTML=['piano','e-piano','synth lead','square lead','bass','sub bass','strings','pad','pluck','bell','organ','drums'].map(i=>'<option>'+i+'</option>').join('')</script>
+</body></html>
