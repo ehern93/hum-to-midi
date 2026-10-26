@@ -14,7 +14,7 @@
  </nav>
  <div class="song"><button id="rewind" class="ghost" title="Back to start">⏮</button><span id="pos" class="lcd">1.1</span>
   <label>BPM<input id="bpm" type="number" min="40" max="240"></label><label>Key<select id="key"></select><select id="scale"></select></label>
-  <label class="chk"><input id="loop" type="checkbox">Loop</label><button id="advtoggle" class="ghost">⚙ Advanced</button></div>
+  <label class="chk"><input id="loop" type="checkbox">Loop</label><button id="advtoggle" class="ghost studio-only">⚙ Advanced</button><button id="studiobtn" class="ghost">🎛 Studio</button></div>
 </header>
 <div class="advbar adv">
  <label>Transpose<input id="transpose" type="number" min="-24" max="24" value="0"></label><label>Bars<input id="bars" type="number" min="1" max="128"></label>
@@ -25,6 +25,27 @@
  <label title="Time between your voice and the detected note; notes are shifted earlier by this">Latency fix<input id="lat" type="range" min="0" max="300"><span id="latv"></span></label>
 </div>
 <main>
+ <section id="humview" class="card">
+  <div class="hv-top">
+   <button id="humbtn" class="humbtn"><i>🎤</i><b>Hum</b></button>
+   <div class="hv-live"><div id="hvnote" class="hvnote">—</div><div id="hvsub" class="hint">Tap Hum and sing a note</div></div>
+   <div id="hvstaff" class="hvstaff"></div>
+   <div class="hv-hold"><button id="holdbtn" class="ghost" title="Freeze the note you are humming">🔒 Hold</button><div class="nudge"><button id="hvdn" class="ghost" title="Semitone down">−</button><button id="hvup" class="ghost" title="Semitone up">+</button></div></div>
+  </div>
+  <div class="hv-row"><span class="lbl">Instrument</span><div id="hvtracks" class="pills"></div></div>
+  <div class="hv-row"><span class="lbl">Length</span><div id="hvdur" class="pills durs"></div><label class="chk"><input id="hvdot" type="checkbox">Dotted</label></div>
+  <div class="hv-row"><button id="capture" class="capture">＋ Add note to melody</button><button id="hvrest" class="ghost" title="Leave a gap">Rest</button><span class="sp"></span><button id="hvplay" class="bigplay">▶ Play</button></div>
+  <div class="scorecard">
+   <div class="row"><div class="tabs"><button id="tabstaff" class="tab on">𝄞 Staff</button><button id="tabroll" class="tab">▦ Piano roll</button></div>
+    <select id="clefsel" title="Clef"><option value="auto">Auto clef</option><option value="treble">Treble 𝄞</option><option value="bass">Bass 𝄢</option></select>
+    <span class="sp"></span><span class="zoom"><button id="zout" class="ghost">−</button><span id="zv">100%</span><button id="zin" class="ghost">+</button></span></div>
+   <div id="selbar" class="selbar"><span id="selname" class="hint">Tap a note to edit it</span><span class="sp"></span><span id="seldurs" class="pills durs sm"></span><button id="seldn" class="ghost">▼</button><button id="selup" class="ghost">▲</button><button id="seldel" class="ghost danger">🗑</button></div>
+   <div id="staffscroll" class="staffscroll"><div id="staff"></div></div>
+   <p class="hint" id="staffhint">Tap a note to select · drag it up/down to change pitch · pinch a note to change its length · pinch empty space or use −/+ to zoom · swipe to scroll</p>
+   <div id="rollhost"></div>
+  </div>
+  <div id="beathost"></div>
+ </section>
  <aside id="hum" class="card">
   <div class="tuner-top"><span id="hnote">—</span><span id="hout"></span></div>
   <div class="tuner"><div id="needle"></div></div>

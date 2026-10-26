@@ -1,3 +1,5 @@
+import { plan } from './sched';
+import { renderStaff, keyFifths, spell, noteValue, autoClef, yToStep, StaffOpts, Clef } from './score';
 import './style.css';
 import { detectPitch } from './pitch';
 import { NAMES, SCALES, freqToMidiFloat, noteName, snapToScale, NoteStabilizer } from './music';
@@ -55,16 +57,13 @@ function stop() {
   updBtns(); draw();
 }
 function schedule() {
-  if (!ctx) return; const ahead = (ctx.currentTime + 0.12 - startCtxTime) / spb() + startBeat; const L = P.loop;
-  while (schedBeat < ahead) {
-    const end = Math.min(ahead, L.on && !recording && schedBeat < L.e ? L.e : Infinity);
-    const toTime = (b: number) => startCtxTime + (b - startBeat) * spb();
-    for (const t of P.tracks) { if (!audible(t)) continue; const st = strips.get(t.id)!;
-      for (const n of t.notes) if (n.s >= schedBeat && n.s < end) { const tm = toTime(n.s); playT(t, ctx, st.input, pitchOf(t, n), tm, n.d * spb(), n.v); } }
-    if ((recording && $<HTMLInputElement>('#metro').checked) || $<HTMLInputElement>('#metroplay').checked) for (let b = Math.ceil(schedBeat); b < end; b++) if (b < 0 || b < recStartAt || !beatOn()) click(toTime(b), ((b % 4) + 4) % 4 === 0);
-    if (end === L.e && L.on && !recording && end < ahead) { startCtxTime = toTime(L.e); startBeat = L.s; schedBeat = L.s; continue; }
-    schedBeat = end; if (end === ahead) break;
-  }
+  if (!ctx) return; const L = P.loop; const loop = { on: L.on && !recording, s: L.s, e: L.e }; const now = ctx.currentTime;
+  const r = plan({ schedBeat, startBeat, startCtxTime }, now, spb(), loop); ({ schedBeat, startBeat, startCtxTime } = r.clock);
+  const metro = (recording && $<HTMLInputElement>('#metro').checked) || $<HTMLInputElement>('#metroplay').checked;
+  for (const g of r.segs) { const toTime = (b: number) => g.t0 + (b - g.b0) * spb();
+    for (const t of P.tracks) { if (!audible(t)) continue; const st = strips.get(t.id); if (!st) continue;
+      for (const n of t.notes) if (n.s >= g.from && n.s < g.to) { const tm = toTime(n.s); if (tm < now - 0.03) continue; playT(t, ctx, st.input, pitchOf(t, n), Math.max(tm, now), n.d * spb(), n.v); } }
+    if (metro) for (let b = Math.ceil(g.from); b < g.to; b++) if (b < 0 || b < recStartAt || !beatOn()) click(Math.max(now, toTime(b)), ((b % 4) + 4) % 4 === 0); }
   if (!recording && !L.on && posBeat() > Math.max(P.bars * 4, songEnd(P.tracks))) { stop(); startBeat = 0; draw(); }
 }
 function click(t: number, accent: boolean) { const c = ctx!; const o = c.createOscillator(); const g = c.createGain(); o.frequency.value = accent ? 1600 : 1000; g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05); o.connect(g).connect(master); o.start(t); o.stop(t + 0.06); }
@@ -149,7 +148,7 @@ window.addEventListener('keyup', e => { const k = e.key.toLowerCase(); if (KEYMA
 // ---------- hum detection
 let micOn = false, analyser: AnalyserNode, micStream: MediaStream; const stab = new NoteStabilizer(3, 5); let humNote: number | null = null; let smoothF = 0; let humPeak = 0;
 async function toggleMic() {
-  if (micOn) { micOn = false; micStream.getTracks().forEach(t => t.stop()); noteOff('hum'); $('#mic').classList.remove('on'); $('#mic').querySelector('b')!.textContent = 'Start mic'; return; }
+  if (micOn) { micOn = false; hvMic(false); micStream.getTracks().forEach(t => t.stop()); noteOff('hum'); $('#mic').classList.remove('on'); $('#mic').querySelector('b')!.textContent = 'Start mic'; return; }
   const c = ac();
   try { micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
   catch { alert('Microphone access denied.'); return; }
@@ -157,7 +156,7 @@ async function toggleMic() {
   // estimated input→note latency: half the analysis window + stabilizer frames + device latency
   const est = Math.round(((analyser.fftSize / 2) / c.sampleRate + 3 / 60 + (c.baseLatency || 0.01)) * 1000 + 20);
   if (!localStorage.getItem('h2m-lat-set')) { P.polish.latency = est; $<HTMLInputElement>('#lat').value = String(est); $('#latv').textContent = est + ' ms'; }
-  micOn = true; $('#mic').classList.add('on'); $('#mic').querySelector('b')!.textContent = 'Mic on'; humLoop();
+  micOn = true; hvMic(true); $('#mic').classList.add('on'); $('#mic').querySelector('b')!.textContent = 'Mic on'; humLoop();
 }
 let humBuf: Float32Array<ArrayBuffer> | null = null; let humLast = 0;
 function humLoop(now = performance.now()) {
@@ -175,6 +174,7 @@ function humLoop(now = performance.now()) {
     $('#hnote').textContent = noteName(nearest); $('#hfreq').textContent = smoothF.toFixed(1) + ' Hz';
     $('#hcents').textContent = (cents >= 0 ? '+' : '') + cents + '¢'; $<HTMLElement>('#needle').style.left = 50 + cents + '%';
   } else { smoothF = 0; }
+  hvLive(n);
   const s = stab.push(n);
   if (s !== humNote) { humNote = s; if (s === null) noteOff('hum'); else if ($<HTMLInputElement>('#humplay').checked || recording) noteOn('hum', s); $('#hout').textContent = s === null ? '' : '→ ' + noteName(s); if (s === null) $('#hnote').textContent = '—'; }
 }
@@ -182,6 +182,7 @@ function humLoop(now = performance.now()) {
 // ---------- UI: tracks
 const BEAT_W = 36, LANE = 44, RULER = 22;
 function renderTracks() {
+  queueMicrotask(renderHvTracks);
   const el = $('#tracks'); el.innerHTML = '';
   for (const t of P.tracks) { const d = document.createElement('div'); d.className = 'track' + (t.id === sel ? ' sel' : '');
     d.style.setProperty('--c', hue(t.id));
@@ -317,6 +318,7 @@ function ruler(g: CanvasRenderingContext2D, W: number, h: number, BEAT_W = 36) {
 let drawPend = 0; function draw() { if (!drawPend) drawPend = requestAnimationFrame(() => { drawPend = 0; drawNow(); }); }
 const sz = (c: HTMLCanvasElement, w: number, h: number) => { if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } else c.getContext('2d')!.clearRect(0, 0, w, h); };
 function drawNow() {
+  renderScore();
   const W = Math.max(P.bars * 4, Math.ceil(songEnd(P.tracks) / 4) * 4) * BEAT_W;
   sz(tl, W, RULER + P.tracks.length * LANE); const g = tl.getContext('2d')!;
   g.fillStyle = '#0f1116'; g.fillRect(0, 0, W, tl.height); ruler(g, W, RULER);
@@ -348,7 +350,7 @@ function drawHead() { const x = posBeat() * BEAT_W; document.querySelectorAll<HT
   const pt = `${Math.floor(b / 4) + 1}.${Math.floor(b % 4) + 1}  ·  ${(b * spb()).toFixed(1)}s`; if (pt !== lastPos) { lastPos = pt; $('#pos').textContent = pt; } }
 let lastPos = '';
 let animOn = false; function kickAnim() { if (!animOn) { animOn = true; requestAnimationFrame(anim); } }
-function anim() { if (!playing) { animOn = false; drawHead(); return; } requestAnimationFrame(anim); { drawHead(); for (const id of ['#tlwrap', '#rollscroll']) { const sc = $(id); const x = posBeat() * (id === '#rollscroll' ? RW() : BEAT_W); if (x > sc.scrollLeft + sc.clientWidth - 60 || x < sc.scrollLeft) sc.scrollLeft = Math.max(0, x - 60); } } }
+function anim() { if (!playing) { animOn = false; drawHead(); return; } requestAnimationFrame(anim); { drawHead(); hvAnim(); for (const id of ['#tlwrap', '#rollscroll']) { const sc = $(id); const x = posBeat() * (id === '#rollscroll' ? RW() : BEAT_W); if (x > sc.scrollLeft + sc.clientWidth - 60 || x < sc.scrollLeft) sc.scrollLeft = Math.max(0, x - 60); } } }
 // timeline: click = playhead/select; ruler drag = loop
 let loopDrag: number | null = null;
 tl.onpointerdown = e => { const b = e.offsetX / BEAT_W; const lane = Math.floor((e.offsetY - RULER) / LANE);
@@ -477,3 +479,87 @@ function bind() {
 }
 P.tracks.forEach(ensureLoaded); bindBeat(); renderBeats(); setTimeout(() => loadKit(P.beat!.kit, ac()), 0); bind(); buildKeyboard(); renderTracks(); renderEditor(); draw(); updBtns();
 status('Tip: 1) Start mic  2) Record and hum  3) Polish  4) Play  5) Export');
+
+// ================= Hum-first view =================
+const DURS = [{ d: 4, sym: '𝅝', n: 'Whole' }, { d: 2, sym: '𝅗𝅥', n: 'Half' }, { d: 1, sym: '♩', n: 'Quarter' }, { d: 0.5, sym: '♪', n: 'Eighth' }, { d: 0.25, sym: '𝅘𝅥𝅯', n: '16th' }];
+let hvDur = 1, hvDot = false, hvHeld: number | null = null, hvLast: number | null = null, hvSel: Note | null = null, hvCursor: number | null = null, SZ = 1, hvClef: 'auto' | Clef = 'auto', hvHi: Note | null = null;
+const fifths = () => keyFifths(P.root, SCALES[P.scale]);
+const capDur = () => hvDur * (hvDot ? 1.5 : 1);
+function hvMic(on: boolean) { const b = $('#humbtn'); b.classList.toggle('on', on); b.querySelector('b')!.textContent = on ? 'Listening' : 'Hum'; if (!on) hvLive(null); }
+function hvShown() { return hvHeld ?? hvLast; }
+let hvLiveLast: number | null | undefined;
+function hvLive(n: number | null) { if (n !== null) hvLast = n; const shown = hvHeld ?? n ?? hvLast; if (shown === hvLiveLast && n !== null) return; hvLiveLast = shown; paintLive(n !== null || hvHeld !== null); }
+function paintLive(active = true) { const m = hvShown(); const el = $('#hvnote'); el.classList.toggle('held', hvHeld !== null);
+  if (m === null) { el.textContent = '—'; $('#hvsub').textContent = micOn ? 'Hum a steady note…' : 'Tap Hum and sing a note'; $('#hvstaff').innerHTML = renderStaff([], { clef: 'treble', fifths: fifths(), beatW: 40, beats: 1, single: true, height: 150 }).svg; return; }
+  const sp = spell(m, fifths()); el.textContent = sp.name; $('#hvsub').textContent = hvHeld !== null ? 'Held — pick instrument & length, then add' : active ? 'Hearing ' + sp.name + ' · tap Hold to keep it' : 'Last heard ' + sp.name;
+  const clef = hvClef === 'auto' ? autoClef([m]) : hvClef; $('#hvstaff').innerHTML = renderStaff([{ p: m, s: 0, d: capDur(), id: 0 }], { clef, fifths: fifths(), beatW: 40, beats: 1, single: true, height: 150 }).svg; }
+function renderHvTracks() { const h = document.getElementById('hvtracks'); if (!h) return; const ms = P.tracks.filter(t => t.inst !== 'drums');
+  h.innerHTML = ms.map(t => `<button class="pill${t.id === sel ? ' on' : ''}" data-t="${t.id}">${t.name}</button>`).join('') + (ms.length < MAX_INST ? '<button class="pill" data-t="new">＋ Add</button>' : '') + (cur().inst !== 'drums' ? '<button class="pill" data-t="change">🎹 Change sound</button>' : ''); }
+function renderDurs() { const mk = (cur: number, sm = false) => DURS.map(x => `<button class="pill${Math.abs(x.d - cur) < 1e-6 ? ' on' : ''}" data-d="${x.d}" title="${x.n}"><span class="sym">${x.sym}</span>${sm ? '' : x.n}</button>`).join('');
+  $('#hvdur').innerHTML = mk(hvDur); const sd = $('#seldurs'); if (hvSel) { const v = noteValue(hvSel.d); sd.innerHTML = mk(v.base, true) + `<button class="pill${v.dotted ? ' on' : ''}" data-d="dot">•</button>`; } else sd.innerHTML = ''; }
+function sortNotes(t: Track) { t.notes.sort((a, b) => a.s - b.s || a.p - b.p); }
+function shiftAfter(t: Track, from: number, by: number, except?: Note) { for (const n of t.notes) if (n !== except && n.s >= from - 1e-6) n.s = Math.max(0, n.s + by); }
+function fitBars(t: Track) { const end = Math.max(...t.notes.map(n => n.s + n.d), 0); const need = Math.ceil(end / 4); if (need > P.bars) { P.bars = need; const b = document.getElementById('bars') as HTMLInputElement | null; if (b) b.value = String(P.bars); } }
+function insertPos(t: Track) { if (hvSel && t.notes.includes(hvSel)) return hvSel.s + hvSel.d; if (hvCursor !== null) return hvCursor; return Math.max(0, ...t.notes.map(n => n.s + n.d)); }
+function capture() { const m = hvShown(); if (m === null) { $('#hvsub').textContent = 'Hum a note first (or tap Rest)'; return; } let t = cur(); if (t.inst === 'drums') { const mt = P.tracks.find(x => x.inst !== 'drums'); if (!mt) return; sel = mt.id; t = mt; }
+  const d = capDur(); const at = insertPos(t); shiftAfter(t, at, d); const n: Note = { p: m, s: at, d, v: 0.85 }; t.notes.push(n); t.raw = null; sortNotes(t); hvSel = n; hvCursor = null; fitBars(t); ensureLoaded(t); preview(m); after(); scrollToNote(n); }
+function addRest() { const t = cur(); const d = capDur(); const at = insertPos(t); shiftAfter(t, at, d); hvSel = null; hvCursor = at + d; after(); }
+function scoreOpts(t: Track): StaffOpts { const clef = hvClef === 'auto' ? autoClef(t.notes.map(n => n.p)) : hvClef; const end = Math.max(P.bars * 4, Math.ceil((Math.max(0, ...t.notes.map(n => n.s + n.d)) + 0.01) / 4) * 4 + 4); return { clef, fifths: fifths(), beatW: 44 * SZ, beats: end, height: 180 }; }
+let lastSvgKey = '';
+function renderScore() { const host = document.getElementById('staff'); if (!host) return; const t = cur(); if (hvSel && !t.notes.includes(hvSel)) hvSel = null;
+  if (t.inst === 'drums') { host.innerHTML = '<p class="hint" style="padding:16px">This is a drum track — pick an instrument above to see its notes.</p>'; lastSvgKey = ''; return; }
+  const o = scoreOpts(t); const sn = t.notes.map((n, i) => ({ p: n.p, s: n.s, d: n.d, id: i, sel: n === hvSel, hi: n === hvHi }));
+  const key = JSON.stringify([sn, o]); if (key === lastSvgKey) return; lastSvgKey = key; host.innerHTML = renderStaff(sn, o).svg;
+  const cs = document.getElementById('clefsel') as HTMLSelectElement; cs.options[0].text = 'Auto clef (' + (o.clef === 'treble' ? '𝄞' : '𝄢') + ')';
+  $('#selname').textContent = hvSel ? `${spell(hvSel.p, o.fifths).name} · ${noteValue(hvSel.d).n} · beat ${(hvSel.s + 1).toFixed(2).replace(/\.00$/, '')}` : t.notes.length ? 'Tap a note to edit it' : 'No notes yet — hum one and tap “Add note”';
+  ['#seldn', '#selup', '#seldel'].forEach(id => ($(id) as HTMLButtonElement).disabled = !hvSel); renderDurs(); }
+function scrollToNote(n: Note) { requestAnimationFrame(() => { const sc = $('#staffscroll'); const t = cur(); const x = (34 + Math.abs(fifths()) * 9 + 8 + 14) + n.s * 44 * SZ; if (x > sc.scrollLeft + sc.clientWidth - 40 || x < sc.scrollLeft) sc.scrollLeft = Math.max(0, x - sc.clientWidth / 2); void t; }); }
+function stepPitch(n: Note, dir: number) { const sc = $<HTMLInputElement>('#snap').checked ? SCALES[P.scale] : SCALES.chromatic; let p = n.p; for (let i = 0; i < 12; i++) { p += dir; if (sc.includes(((p - P.root) % 12 + 12) % 12)) break; } n.p = Math.max(21, Math.min(108, p)); }
+function setSelDur(d: number) { if (!hvSel) return; const t = cur(); const delta = d - hvSel.d; shiftAfter(t, hvSel.s + hvSel.d, delta, hvSel); hvSel.d = d; t.raw = null; fitBars(t); after(); }
+const DSTEPS = [0.25, 0.375, 0.5, 0.75, 1, 1.5, 2, 3, 4];
+function nudgeDur(dir: number) { if (!hvSel) return; let i = DSTEPS.findIndex(x => x >= hvSel!.d - 1e-6); if (i < 0) i = DSTEPS.length - 1; i = Math.max(0, Math.min(DSTEPS.length - 1, i + dir)); setSelDur(DSTEPS[i]); }
+function delSel() { if (!hvSel) return; const t = cur(); const n = hvSel; t.notes = t.notes.filter(x => x !== n); shiftAfter(t, n.s + n.d, -n.d); const prev = t.notes.filter(x => x.s < n.s).pop() || null; hvSel = prev; t.raw = null; after(); }
+function setZoom(z: number, cx?: number) { const sc = $('#staffscroll'); const old = SZ; SZ = Math.max(0.5, Math.min(3, z)); const anchor = cx ?? sc.clientWidth / 2; const left = (sc.scrollLeft + anchor) * (SZ / old) - anchor; $('#zv').textContent = Math.round(SZ * 100) + '%'; renderScore(); sc.scrollLeft = Math.max(0, left); }
+let hvHiIdx = -2;
+function hvAnim() { if (document.body.classList.contains('studio')) return; const t = cur(); const b = posBeat(); const n = t.notes.find(x => b >= x.s && b < x.s + x.d) || null; const idx = n ? t.notes.indexOf(n) : -1; if (idx === hvHiIdx) return; hvHiIdx = idx; hvHi = n; renderScore(); if (n) scrollToNote(n); }
+// staff gestures
+{ const sc = $('#staffscroll'); const pts = new Map<number, { x: number; y: number }>(); let mode: '' | 'note' | 'scroll' | 'pinch' = ''; let target: Note | null = null; let sx = 0, sy = 0, sl = 0, stepAcc = 0, moved = false, pd0 = 0, z0 = 1, durI = 0;
+  const hit = (e: PointerEvent): Note | null => { const g = (e.target as Element).closest?.('.sn') as HTMLElement | null; if (g) return cur().notes[+g.dataset.id!] || null;
+    const t = cur(); if (t.inst === 'drums') return null; const svg = $('#staff').querySelector('svg'); if (!svg) return null; const r = svg.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; const o = scoreOpts(t);
+    let best: Note | null = null, bd = 22; for (const n of t.notes) { const nx = (34 + Math.abs(o.fifths) * 9 + 8 + 14) + n.s * o.beatW; const ny = 100 - (spell(n.p, o.fifths).step - (o.clef === 'treble' ? 30 : 18)) * 5; const dd = Math.hypot(nx - x, ny - y); if (dd < bd) { bd = dd; best = n; } } return best; };
+  const dist = () => { const a = [...pts.values()]; return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); };
+  sc.addEventListener('pointerdown', e => { sc.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) { if (mode === 'note' && target && !moved) { mode = 'pinch'; durI = DSTEPS.findIndex(x => x >= target!.d - 1e-6); } else { mode = 'pinch'; target = null; } pd0 = dist(); z0 = SZ; return; }
+    sx = e.clientX; sy = e.clientY; sl = sc.scrollLeft; stepAcc = 0; moved = false; target = hit(e); mode = target ? 'note' : 'scroll'; if (target && target !== hvSel) { hvSel = target; renderScore(); } });
+  sc.addEventListener('pointermove', e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (mode === 'pinch' && pts.size === 2) { const ratio = dist() / (pd0 || 1); if (target) { const ni = Math.max(0, Math.min(DSTEPS.length - 1, durI + Math.round(Math.log2(ratio) * 3))); if (Math.abs(DSTEPS[ni] - target.d) > 1e-6) { hvSel = target; setSelDur(DSTEPS[ni]); buzz(); } } else setZoom(z0 * ratio); return; }
+    if (mode === 'scroll') { if (Math.abs(e.clientX - sx) > 4) moved = true; sc.scrollLeft = sl - (e.clientX - sx); return; }
+    if (mode === 'note' && target) { const dy = sy - e.clientY; const steps = Math.trunc(dy / 10); if (steps !== stepAcc) { moved = true; const dir = Math.sign(steps - stepAcc); for (let i = 0; i < Math.abs(steps - stepAcc); i++) stepPitch(target, dir); stepAcc = steps; cur().raw = null; preview(target.p); save(); renderScore(); } } });
+  const up = (e: PointerEvent) => { pts.delete(e.pointerId); if (pts.size) return; if (mode === 'note' && target && !moved) preview(target.p); if (mode === 'scroll' && !moved && !target) { hvSel = null; renderScore(); } if (mode === 'note' && moved) after(); mode = ''; target = null; };
+  sc.addEventListener('pointerup', up); sc.addEventListener('pointercancel', up);
+  sc.addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); setZoom(SZ * (e.deltaY < 0 ? 1.1 : 0.9), e.clientX - sc.getBoundingClientRect().left); } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { sc.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false }); }
+// wiring
+{ const beat = $('.beatpanel'), editor = $('.editor'), sect = $('section.grow'), arr = $('.arr');
+  const place = () => { const studio = document.body.classList.contains('studio'); const roll = document.body.classList.contains('rollmode');
+    if (studio) { sect.insertBefore(beat, arr); sect.appendChild(editor); } else { $('#beathost').appendChild(beat); if (roll) $('#rollhost').appendChild(editor); else sect.appendChild(editor); } draw(); };
+  place();
+  $('#studiobtn').onclick = () => { document.body.classList.toggle('studio'); localStorage.setItem('h2m-studio', document.body.classList.contains('studio') ? '1' : ''); place(); };
+  if (localStorage.getItem('h2m-studio')) { document.body.classList.add('studio'); place(); }
+  $('#tabstaff').onclick = () => { document.body.classList.remove('rollmode'); $('#tabstaff').classList.add('on'); $('#tabroll').classList.remove('on'); place(); };
+  $('#tabroll').onclick = () => { document.body.classList.add('rollmode'); $('#tabroll').classList.add('on'); $('#tabstaff').classList.remove('on'); place(); renderEditor(); };
+  $('#humbtn').onclick = () => toggleMic();
+  $('#holdbtn').onclick = () => { if (hvHeld !== null) hvHeld = null; else if (hvLast !== null) hvHeld = hvLast; $('#holdbtn').classList.toggle('on', hvHeld !== null); $('#holdbtn').textContent = hvHeld !== null ? '🔓 Release' : '🔒 Hold'; paintLive(); if (hvHeld !== null) preview(hvHeld); };
+  const nud = (k: number) => { const m = hvShown() ?? 60 - k; hvHeld = Math.max(21, Math.min(108, m + k)); $('#holdbtn').classList.add('on'); $('#holdbtn').textContent = '🔓 Release'; paintLive(); preview(hvHeld); };
+  $('#hvup').onclick = () => nud(1); $('#hvdn').onclick = () => nud(-1);
+  $('#hvdur').onclick = e => { const b = (e.target as Element).closest('[data-d]') as HTMLElement | null; if (!b) return; hvDur = +b.dataset.d!; renderDurs(); paintLive(); };
+  $<HTMLInputElement>('#hvdot').onchange = e => { hvDot = (e.target as HTMLInputElement).checked; paintLive(); };
+  $('#seldurs').onclick = e => { const b = (e.target as Element).closest('[data-d]') as HTMLElement | null; if (!b || !hvSel) return; const v = noteValue(hvSel.d); if (b.dataset.d === 'dot') setSelDur(v.dotted ? v.base : v.base * 1.5); else setSelDur(+b.dataset.d! * (v.dotted ? 1.5 : 1)); };
+  $('#hvtracks').onclick = e => { const b = (e.target as Element).closest('[data-t]') as HTMLElement | null; if (!b) return; const v = b.dataset.t!; if (v === 'new') openBrowser(null); else if (v === 'change') openBrowser(cur()); else { sel = +v; hvSel = null; hvCursor = null; previewInst(cur()); after(); } };
+  $('#capture').onclick = capture; $('#hvrest').onclick = addRest; $('#hvplay').onclick = () => $('#play').click();
+  $('#seldel').onclick = delSel; $('#selup').onclick = () => { if (hvSel) { stepPitch(hvSel, 1); preview(hvSel.p); after(); } }; $('#seldn').onclick = () => { if (hvSel) { stepPitch(hvSel, -1); preview(hvSel.p); after(); } };
+  $('#zin').onclick = () => setZoom(SZ * 1.25); $('#zout').onclick = () => setZoom(SZ / 1.25);
+  $<HTMLSelectElement>('#clefsel').onchange = e => { hvClef = (e.target as HTMLSelectElement).value as typeof hvClef; paintLive(); renderScore(); };
+  document.addEventListener('keydown', e => { if (document.body.classList.contains('studio') || !hvSel || (e.target as Element).closest('input,select,textarea')) return; if (e.key === 'Delete' || e.key === 'Backspace') { delSel(); e.preventDefault(); } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { stepPitch(hvSel, e.key === 'ArrowUp' ? 1 : -1); preview(hvSel.p); after(); e.preventDefault(); } }, true);
+  const playSync = () => { const p = $('#play'); const on = p.querySelector('b')!.textContent === 'Stop'; $('#hvplay').textContent = on ? '■ Stop' : '▶ Play'; $('#hvplay').classList.toggle('on', on); if (!on && hvHi) { hvHi = null; hvHiIdx = -2; renderScore(); } };
+  new MutationObserver(playSync).observe($('#play'), { subtree: true, childList: true, characterData: true });
+  renderHvTracks(); renderDurs(); paintLive(); renderScore(); }
