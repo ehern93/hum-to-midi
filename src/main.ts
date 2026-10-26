@@ -5,26 +5,25 @@ import { NAMES, SCALES, freqToMidiFloat, noteName, snapToScale, NoteStabilizer }
 import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM, startGM, gmReady, SYNTH_GM } from './gm';
 import { INSTRUMENTS, DRUMS, Inst, FX, playNote, startVoice, makeStrip, Strip, encodeWav } from './audio';
 import { polish, Note } from './polish';
-import { PRESETS, presetNotes } from './drums';
+import { PRESETS, presetNotes, beatNotes, KITS, loadKit, playKit, kitReady } from './drums';
 
 interface Track { id: number; name: string; inst: Inst; vol: number; pan: number; mute: boolean; solo: boolean; fx: FX; notes: Note[]; raw?: Note[] | null; parts?: Record<number, string>; gm?: number | null }
-interface Project { bpm: number; root: number; scale: string; transpose: number; bars: number; loop: { on: boolean; s: number; e: number }; tracks: Track[]; polish: { on: boolean; strength: number; latency: number; grid: number } }
+interface Project { bpm: number; root: number; scale: string; transpose: number; bars: number; loop: { on: boolean; s: number; e: number }; tracks: Track[]; beat?: { id: string | null; kit: string; fills: boolean }; polish: { on: boolean; strength: number; latency: number; grid: number } }
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
 const defFx = (): FX => ({ reverb: 0.15, delay: 0, filter: 1, dist: 0, chorus: 0 });
 let nid = 1;
 const newTrack = (inst: Inst, name?: string): Track => ({ id: nid++, name: name || inst[0].toUpperCase() + inst.slice(1), inst, vol: 0.8, pan: 0, mute: false, solo: false, fx: defFx(), notes: [], parts: inst === 'drums' ? {} : undefined });
 const defPolish = () => ({ on: true, strength: 0.7, latency: 120, grid: 0.25 });
 function demo(): Project {
-  const drums = newTrack('drums', 'Drums'); drums.parts = {};
-  for (let b = 0; b < 4; b++) { const id = b === 3 ? 'fill1' : 'pop'; drums.parts[b] = id; drums.notes.push(...presetNotes(PRESETS.find(p => p.id === id)!, b)); }
-  return { bpm: 100, root: 0, scale: 'major', transpose: 0, bars: 8, loop: { on: true, s: 0, e: 16 }, tracks: [{ ...newTrack('piano', 'Melody'), gm: 0 }, { ...newTrack('bass'), gm: 33 }, drums], polish: defPolish() };
+  const drums = newTrack('drums', 'Beat'); const bn = beatNotes(PRESETS.find(p => p.id === 'pop')!, 8, true); drums.notes = bn.notes; drums.parts = bn.parts;
+  return { beat: { id: 'pop', kit: 'studio', fills: true }, bpm: 100, root: 0, scale: 'major', transpose: 0, bars: 8, loop: { on: true, s: 0, e: 16 }, tracks: [{ ...newTrack('piano', 'Melody'), gm: 0 }, { ...newTrack('bass'), gm: 33 }, drums], polish: defPolish() };
 }
 let P: Project = load() || demo();
 let sel = P.tracks[0].id;
 let armed: number | null = P.tracks[0].id;
 const cur = () => P.tracks.find(t => t.id === sel) || P.tracks[0];
 function save() { localStorage.setItem('h2m-project-v2', JSON.stringify(P)); }
-function load(): Project | null { try { const p = JSON.parse(localStorage.getItem('h2m-project-v2') || ''); p.polish ||= defPolish(); nid = Math.max(...p.tracks.map((t: Track) => t.id)) + 1; return p; } catch { return null; } }
+function load(): Project | null { try { const p = JSON.parse(localStorage.getItem('h2m-project-v2') || ''); p.polish ||= defPolish(); p.beat ||= { id: (p.tracks.find((t: Track) => t.inst === 'drums')?.parts?.[0]) || null, kit: 'studio', fills: true }; nid = Math.max(...p.tracks.map((t: Track) => t.id)) + 1; return p; } catch { return null; } }
 function status(s: string) { $('#status').textContent = s; }
 
 // ---------- audio
@@ -50,7 +49,7 @@ async function initMidi() {
 const midiSend = (on: boolean, m: number, v = 0.8, drum = false, at?: number) => midiOut?.send([(on ? 0x90 : 0x80) | (drum ? 9 : 0), m, on ? Math.round(v * 127) : 0], at);
 
 // ---------- transport
-let playing = false, recording = false, startCtxTime = 0, startBeat = 0, schedBeat = 0, timer = 0;
+let recStartAt = -1e9; let playing = false, recording = false, startCtxTime = 0, startBeat = 0, schedBeat = 0, timer = 0;
 const posBeat = () => playing && ctx ? startBeat + (ctx.currentTime - startCtxTime) / spb() : startBeat;
 function play(fromBeat = startBeat) {
   const c = ac(); halt(); playing = true; startBeat = fromBeat; startCtxTime = c.currentTime + 0.03; schedBeat = fromBeat;
@@ -70,14 +69,14 @@ function schedule() {
     for (const t of P.tracks) { if (!audible(t)) continue; const st = strips.get(t.id)!;
       for (const n of t.notes) if (n.s >= schedBeat && n.s < end) { const tm = toTime(n.s); playT(t, ctx, st.input, pitchOf(t, n), tm, n.d * spb(), n.v);
         if (midiOut) { const off = performance.now() + (tm - ctx.currentTime) * 1000; midiSend(true, pitchOf(t, n), n.v, t.inst === 'drums', off); midiSend(false, pitchOf(t, n), 0, t.inst === 'drums', off + n.d * spb() * 1000); } } }
-    if ((recording && $<HTMLInputElement>('#metro').checked) || $<HTMLInputElement>('#metroplay').checked) for (let b = Math.ceil(schedBeat); b < end; b++) click(toTime(b), ((b % 4) + 4) % 4 === 0);
+    if ((recording && $<HTMLInputElement>('#metro').checked) || $<HTMLInputElement>('#metroplay').checked) for (let b = Math.ceil(schedBeat); b < end; b++) if (b < 0 || b < recStartAt || !beatOn()) click(toTime(b), ((b % 4) + 4) % 4 === 0);
     if (end === L.e && L.on && !recording && end < ahead) { startCtxTime = toTime(L.e); startBeat = L.s; schedBeat = L.s; continue; }
     schedBeat = end; if (end === ahead) break;
   }
   if (!recording && !L.on && posBeat() > Math.max(P.bars * 4, songEnd(P.tracks))) { stop(); startBeat = 0; draw(); }
 }
 function click(t: number, accent: boolean) { const c = ctx!; const o = c.createOscillator(); const g = c.createGain(); o.frequency.value = accent ? 1600 : 1000; g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05); o.connect(g).connect(master); o.start(t); o.stop(t + 0.06); }
-function updBtns() { const mc = melodic(); $("#instcount").textContent = `${mc}/${MAX_INST} instruments`; $<HTMLButtonElement>("#addtrack").disabled = mc >= MAX_INST;
+function updBtns() { const bp = document.querySelector('#beatplay'); if (bp) { bp.classList.toggle('on', playing); bp.innerHTML = playing ? '■ Stop' : '▶ Play beat'; } const mc = melodic(); $("#instcount").textContent = `${mc}/${MAX_INST} instruments`; $<HTMLButtonElement>("#addtrack").disabled = mc >= MAX_INST;
   $('#rec').classList.toggle('live', recording); $('#rec').querySelector('b')!.textContent = recording ? 'Stop rec' : 'Record';
   $('#play').querySelector('b')!.textContent = playing && !recording ? 'Stop' : 'Play'; $('#play').querySelector('i')!.textContent = playing && !recording ? '■' : '▶';
   const t = cur(); $('#polish').classList.toggle('done', !!t.raw); $('#revert').style.display = t.raw ? '' : 'none';
@@ -92,7 +91,10 @@ function toggleRec() {
   // a new take on a polished track: keep working from the raw version
   if (takeTrack.raw) { takeTrack.notes = takeTrack.raw; takeTrack.raw = null; }
   if (!micOn && takeTrack.inst !== 'drums') toggleMic();
-  recording = true; takeStartBeat = startBeat; renderTracks(); updBtns();
+  if (playing && beatOn()) { // beat is running: start on the next bar, no restart, no count-in
+    const nb = Math.ceil((posBeat() + 0.05) / 4) * 4; recording = true; recStartAt = nb; takeStartBeat = nb; renderTracks(); updBtns();
+    status(`Recording starts on bar ${nb / 4 + 1}… hum along with the beat.`); setTimeout(() => recording && status('Recording… press Record again to stop.'), (nb - posBeat()) * spb() * 1000); return; }
+  recStartAt = -1e9; recording = true; takeStartBeat = startBeat; renderTracks(); updBtns();
   const pre = $<HTMLInputElement>('#countin').checked ? 4 : 0; play(Math.max(0, startBeat) - pre); status('Recording… hum or play keys. Press Record again to stop.');
 }
 function endTake() {
@@ -120,7 +122,7 @@ function noteOn(src: string, m: number, vel = 0.8) {
 function noteOff(src: string) {
   const h = held.get(src); if (!h) return; held.delete(src); h.stop(); const t = P.tracks.find(x => x.id === h.tr); lightKey(h.m, false);
   if (t) midiSend(false, t.inst === 'drums' ? h.m : h.m + P.transpose, 0, t.inst === 'drums');
-  if (recording && playing && t) { let s = h.startB, d = Math.max(posBeat() - s, 0.03);
+  if (recording && playing && t && posBeat() > recStartAt) { let s = Math.max(h.startB, recStartAt), d = Math.max(posBeat() - s, 0.03);
     const q = +$<HTMLSelectElement>('#recq').value; if (q) { s = Math.round(s / q) * q; d = Math.max(q, Math.round(d / q) * q); }
     if (s + d > 0) { t.notes.push({ p: h.m, s: Math.max(0, s), d: t.inst === 'drums' ? 0.25 : d, v: vel(src) }); draw(); } }
 }
@@ -207,7 +209,7 @@ function renderTracks() {
 }
 const MAX_INST = 4; const melodic = () => P.tracks.filter(t => t.inst !== 'drums').length;
 function instLabel(t: Track) { if (t.inst === 'drums') return '🥁 Drum kit'; if (t.gm != null) return `${gmCat(t.gm).icon} ${gmLabel(t.gm)}${gmReady(t.gm) ? '' : ' …'}`; return `🎛 ${t.inst} (synth)`; }
-function playT(t: Track, c: BaseAudioContext, out: AudioNode, m: number, tm: number, dur: number, v: number) { if (t.inst !== 'drums' && t.gm != null && playGM(c, out, t.gm, m, tm, dur, v)) return; playNote(c, out, t.inst, m, tm, dur, v); }
+function playT(t: Track, c: BaseAudioContext, out: AudioNode, m: number, tm: number, dur: number, v: number) { if (t.inst === 'drums' && playKit(c, out, P.beat!.kit, m, tm, v)) return; if (t.inst !== 'drums' && t.gm != null && playGM(c, out, t.gm, m, tm, dur, v)) return; playNote(c, out, t.inst, m, tm, dur, v); }
 function ensureLoaded(t: Track) { if (t.gm == null || gmReady(t.gm)) return; loadGM(t.gm, ac()).then(ok => { if (!ok) status(`Couldn't load ${gmLabel(t.gm!)} samples; using built-in synth.`); renderTracks(); }); }
 // ---------- instrument browser
 let ibTarget: Track | null = null; let ibCat = -1;
@@ -234,6 +236,37 @@ function renderBrowser() {
 }
 function instName(t: Track) { return t.gm != null ? gmLabel(t.gm) : t.inst[0].toUpperCase() + t.inst.slice(1); }
 function previewInst(t: Track) { const c = ac(); syncStrips(); const st = strips.get(t.id); if (!st) return; const base = (t.gm ?? 0) >> 3 === 4 ? 36 : 60; [0, 4, 7, 12].forEach((d, i) => playT(t, c, st.input, base + P.root + d, c.currentTime + 0.05 + i * 0.18, 0.5, 0.75)); }
+// ---------- beat (beat-first drums)
+const beatTrack = () => P.tracks.find(t => t.inst === 'drums');
+const beatOn = () => { const b = beatTrack(); return !!b && audible(b) && b.notes.length > 0; };
+function applyBeat() { const id = P.beat!.id; let bt = beatTrack(); if (!id) return;
+  if (!bt) { bt = newTrack('drums', 'Beat'); P.tracks.push(bt); syncStrips(); }
+  const bn = beatNotes(PRESETS.find(p => p.id === id)!, Math.max(P.bars, Math.ceil(songEnd(P.tracks.filter(t => t.inst !== 'drums')) / 4)), P.beat!.fills); bt.notes = bn.notes; bt.parts = bn.parts; bt.mute = false; }
+function renderBeats() {
+  const g = $('#beats'); const cur = P.beat!.id;
+  g.innerHTML = PRESETS.filter(p => p.group === 'Grooves').map(p => `<button class="beat ${p.id === cur ? 'on' : ''}" data-id="${p.id}"><b>${p.name}</b><small>${p.genre} · ${p.bpm} BPM</small></button>`).join('') + `<button class="beat none ${!cur ? 'on' : ''}" data-id=""><b>No beat</b><small>metronome only</small></button>`;
+  g.querySelectorAll<HTMLElement>('.beat').forEach(b => b.onclick = () => pickBeat(b.dataset.id || null));
+  $<HTMLSelectElement>('#beatkit').value = P.beat!.kit; $<HTMLInputElement>('#beatfill').checked = P.beat!.fills;
+  const bt = beatTrack(); $<HTMLInputElement>('#beatvol').value = String(bt ? bt.vol : 0.8);
+  const pr = PRESETS.find(p => p.id === cur); $('#beatbpm').textContent = pr ? (pr.bpm !== P.bpm ? `Use ${pr.bpm} BPM` : `${pr.bpm} BPM ✓`) : ''; $('#beatbpm').style.visibility = pr ? '' : 'hidden';
+}
+function pickBeat(id: string | null) {
+  P.beat!.id = id; const bt = beatTrack();
+  if (!id) { if (bt) { bt.notes = []; bt.parts = {}; } }
+  else { const pr = PRESETS.find(p => p.id === id)!; const fresh = !P.tracks.some(t => t.inst !== 'drums' && t.notes.length);
+    if (fresh && pr.bpm) { setBpm(pr.bpm); } if (pr.kit) { P.beat!.kit = pr.kit; loadKit(pr.kit, ac()); } applyBeat(); }
+  save(); renderBeats(); renderTracks(); renderEditor(); draw(); updBtns();
+  status(id ? `${PRESETS.find(p => p.id === id)!.name} beat${playing ? ' — swapped live' : ' — press ▶ Play beat'}.` : 'Beat removed.');
+}
+function setBpm(v: number) { const pb = posBeat(); P.bpm = v; $<HTMLInputElement>('#bpm').value = String(v); if (playing && ctx) { startBeat = pb; startCtxTime = ctx.currentTime; schedBeat = Math.max(schedBeat, pb); } strips.clear(); syncStrips(); }
+function bindBeat() {
+  $('#beatkit').innerHTML = KITS.map(k => `<option value="${k.id}">${k.name}</option>`).join('');
+  $('#beatkit').onchange = () => { P.beat!.kit = $<HTMLSelectElement>('#beatkit').value; loadKit(P.beat!.kit, ac()).then(ok => status(ok ? `${KITS.find(k => k.id === P.beat!.kit)!.name} kit ready.` : 'Using built-in synth drums.')); save(); };
+  $('#beatfill').onchange = () => { P.beat!.fills = $<HTMLInputElement>('#beatfill').checked; applyBeat(); save(); draw(); renderEditor(); };
+  $('#beatvol').oninput = () => { const bt = beatTrack(); if (bt) { bt.vol = +$<HTMLInputElement>('#beatvol').value; syncStrips(); save(); } };
+  $('#beatbpm').onclick = () => { const pr = PRESETS.find(p => p.id === P.beat!.id); if (pr?.bpm) { setBpm(pr.bpm); save(); draw(); renderBeats(); } };
+  $('#beatplay').onclick = () => { if (playing) { stop(); } else { if (!beatOn() && !P.beat!.id) pickBeat('pop'); else if (!beatOn()) { applyBeat(); after(); } play(P.loop.on ? P.loop.s : startBeat); } updBtns(); };
+}
 function after() { syncStrips(); save(); renderTracks(); renderEditor(); draw(); updBtns(); }
 function renderEditor() { requestAnimationFrame(scrollRollToNotes);
   const t = cur(); const el = $('#fx'); el.innerHTML = `<h3>Effects · ${t.name}</h3>` + (['reverb', 'delay', 'chorus', 'dist', 'filter'] as (keyof FX)[]).map(k => `<label>${k === 'dist' ? 'distortion' : k === 'filter' ? 'tone' : k}<input type="range" min="0" max="1" step="0.01" data-k="${k}" value="${t.fx[k]}"></label>`).join('');
@@ -262,7 +295,7 @@ function setPart(t: Track, bar: number, id: string | null) {
 }
 function previewPreset(id: string) {
   const c = ac(); const t = cur(); const st = strips.get(t.id)!; const t0 = c.currentTime + 0.05;
-  for (let rep = 0; rep < 2; rep++) for (const n of presetNotes(PRESETS.find(p => p.id === id)!, rep)) playNote(c, st.input, 'drums', n.p, t0 + n.s * spb(), 0.1, n.v);
+  for (let rep = 0; rep < 2; rep++) for (const n of presetNotes(PRESETS.find(p => p.id === id)!, rep)) playT(t, c, st.input, n.p, t0 + n.s * spb(), 0.1, n.v);
 }
 $('#fillall').onclick = () => { const t = cur(); for (let b = 0; b < P.bars; b++) setPart(t, b, pickPreset); };
 $('#clearall').onclick = () => { const t = cur(); for (let b = 0; b < P.bars; b++) setPart(t, b, null); };
@@ -274,7 +307,7 @@ function renderSteps() {
   for (const dr of [...DRUMS].reverse()) { const row = document.createElement('div'); row.className = 'srow'; row.innerHTML = `<span>${dr.n}</span>`;
     for (let i = 0; i < 16; i++) { const s = stepBar * 4 + i / 4; const b = document.createElement('button'); b.className = 'step' + (i % 4 === 0 ? ' beat' : '');
       const has = () => t.notes.find(n => n.p === dr.m && Math.abs(n.s - s) < 0.01); if (has()) b.classList.add('on');
-      b.onclick = () => { const h = has(); if (h) t.notes = t.notes.filter(n => n !== h); else { t.notes.push({ p: dr.m, s, d: 0.25, v: 0.85 }); playNote(ac(), strips.get(t.id)!.input, 'drums', dr.m, ctx!.currentTime, 0.1, 0.85); }
+      b.onclick = () => { const h = has(); if (h) t.notes = t.notes.filter(n => n !== h); else { t.notes.push({ p: dr.m, s, d: 0.25, v: 0.85 }); playT(t, ac(), strips.get(t.id)!.input, dr.m, ctx!.currentTime, 0.1, 0.85); }
         t.parts ||= {}; t.parts[stepBar] = 'custom'; save(); renderSteps(); renderPresets(); draw(); };
       row.appendChild(b); }
     g.appendChild(row); }
@@ -360,7 +393,7 @@ function buildMidi(tracks: Track[]) {
 }
 function songEnd(tracks: Track[]) { const e = Math.max(0, ...tracks.flatMap(t => t.notes.map(n => n.s + n.d))); return P.loop.on ? Math.max(P.loop.e, e) : e; }
 async function renderWav(tracks: Track[], name: string) {
-  status('Loading instrument samples…'); await Promise.all(tracks.filter(t => t.gm != null && t.inst !== 'drums').map(t => loadGM(t.gm!, ac())));
+  status('Loading instrument samples…'); await loadKit(P.beat!.kit, ac()); await Promise.all(tracks.filter(t => t.gm != null && t.inst !== 'drums').map(t => loadGM(t.gm!, ac())));
   const beats = songEnd(tracks); if (!beats) { alert('Nothing to render yet.'); return; }
   status('Rendering WAV…'); const secs = beats * spb() + 2.5; const sr = 44100;
   const oc = new OfflineAudioContext(2, Math.ceil(secs * sr), sr); const mg = oc.createGain(); const comp = oc.createDynamicsCompressor(); mg.connect(comp).connect(oc.destination);
@@ -378,9 +411,9 @@ function bind() {
   const fill = () => { bpm.value = String(P.bpm); key.value = String(P.root); scale.value = P.scale; tr.value = String(P.transpose); bars.value = String(P.bars); $<HTMLInputElement>('#loop').checked = P.loop.on;
     str.value = String(Math.round(P.polish.strength * 100)); $('#strv').textContent = str.value + '%'; lat.value = String(P.polish.latency); $('#latv').textContent = P.polish.latency + ' ms'; pg.value = String(P.polish.grid); $<HTMLInputElement>('#autopolish').checked = P.polish.on; };
   fill();
-  bpm.onchange = () => { P.bpm = Math.max(40, Math.min(240, +bpm.value || 120)); strips.clear(); syncStrips(); save(); draw(); };
+  bpm.onchange = () => { const pb = posBeat(); P.bpm = Math.max(40, Math.min(240, +bpm.value || 120)); if (playing && ctx) { startBeat = pb; startCtxTime = ctx.currentTime; schedBeat = Math.max(schedBeat, pb); } strips.clear(); syncStrips(); save(); draw(); };
   key.onchange = () => { P.root = +key.value; markScale(); save(); draw(); }; scale.onchange = () => { P.scale = scale.value; markScale(); save(); draw(); };
-  tr.onchange = () => { P.transpose = +tr.value; save(); draw(); }; bars.onchange = () => { P.bars = Math.max(1, Math.min(128, +bars.value)); save(); draw(); renderEditor(); };
+  tr.onchange = () => { P.transpose = +tr.value; save(); draw(); }; bars.onchange = () => { P.bars = Math.max(1, Math.min(128, +bars.value)); applyBeat(); save(); draw(); renderEditor(); };
   $<HTMLInputElement>('#loop').onchange = e => { P.loop.on = (e.target as HTMLInputElement).checked; if (P.loop.e <= P.loop.s) P.loop = { on: P.loop.on, s: 0, e: 16 }; save(); draw(); };
   str.oninput = () => { P.polish.strength = +str.value / 100; $('#strv').textContent = str.value + '%'; if (cur().raw) doPolish(); save(); };
   lat.oninput = () => { P.polish.latency = +lat.value; $('#latv').textContent = lat.value + ' ms'; localStorage.setItem('h2m-lat-set', '1'); if (cur().raw) doPolish(); save(); };
@@ -407,5 +440,5 @@ function bind() {
   advBtn.onclick = () => setAdv(!document.body.classList.contains('adv-on')); setAdv(!!localStorage.getItem('h2m-adv'));
   document.addEventListener('click', e => { const m = $('#exportmenu') as HTMLDetailsElement; if (m.open && !m.contains(e.target as Node)) m.open = false; });
 }
-P.tracks.forEach(ensureLoaded); bind(); buildKeyboard(); renderTracks(); renderEditor(); draw(); updBtns(); initMidi();
+P.tracks.forEach(ensureLoaded); bindBeat(); renderBeats(); setTimeout(() => loadKit(P.beat!.kit, ac()), 0); bind(); buildKeyboard(); renderTracks(); renderEditor(); draw(); updBtns(); initMidi();
 status('Tip: 1) Start mic  2) Record and hum  3) Polish  4) Play  5) Export');

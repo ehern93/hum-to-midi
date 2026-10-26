@@ -38,6 +38,11 @@
   <p class="hint">Keys <kbd>A</kbd>–<kbd>K</kbd> play notes · <kbd>Z</kbd>/<kbd>X</kbd> octave · <kbd>Space</kbd> play · <kbd>R</kbd> record</p>
  </aside>
  <section class="card grow">
+  <div class="beatpanel">
+   <div class="row"><h3>🥁 Beat</h3><span class="hint hide-sm">Pick a beat, press play, then hit Record — your take starts on the next bar.</span><span class="sp"></span>
+    <label>Kit<select id="beatkit"></select></label><label title="Beat volume">Vol<input id="beatvol" type="range" min="0" max="1.2" step="0.01"></label>
+    <label class="chk" title="Drum fill every 4th bar"><input id="beatfill" type="checkbox">Fills</label><button id="beatbpm" class="ghost"></button><button id="beatplay" class="bigplay">▶ Play beat</button></div>
+   <div id="beats" class="beats"></div></div>
   <div class="arr"><div id="tracks"></div><div id="tlwrap" class="scroll"><div class="rel"><canvas id="timeline"></canvas><div class="ph"></div></div></div></div>
   <div class="row addrow"><button id="addtrack" class="ghost">+ Instrument track</button><button id="adddrums" class="ghost adv">+ Drum track</button><span id="instcount" class="hint"></span><span class="hint hide-sm">Drag the top ruler to set a loop · click to move the playhead</span><span class="sp"></span><span id="status" class="hint"></span></div>
   <div class="editor">
