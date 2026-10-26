@@ -315,9 +315,9 @@ function renderSteps() {
 
 // ---------- timeline + piano roll (canvas)
 const tl = $<HTMLCanvasElement>('#timeline'); const roll = $<HTMLCanvasElement>('#roll'); const rr = $<HTMLCanvasElement>('#rruler');
-const ROLL_LO = 36, ROLL_HI = 84, RH = 14; let rollSel: Note | null = null;
+const ROLL_LO = 36, ROLL_HI = 84; const COARSE = matchMedia('(pointer: coarse)').matches; const RH = COARSE ? 24 : 14; let RZ = 1; const RW = () => BEAT_W * RZ; let rollSel: Note | null = null;
 const hue = (id: number) => `hsl(${(id * 67 + 170) % 360} 75% 62%)`;
-function ruler(g: CanvasRenderingContext2D, W: number, h: number) {
+function ruler(g: CanvasRenderingContext2D, W: number, h: number, BEAT_W = 36) {
   g.fillStyle = '#12141a'; g.fillRect(0, 0, W, h); g.font = '11px ui-sans-serif,system-ui';
   if (P.loop.on) { g.fillStyle = 'rgba(99,102,241,.35)'; g.fillRect(P.loop.s * BEAT_W, 0, (P.loop.e - P.loop.s) * BEAT_W, h); }
   for (let b = 0; b <= P.bars * 4; b++) { const x = b * BEAT_W; g.fillStyle = b % 4 ? '#3a3f4b' : '#8a93a6'; g.fillRect(x, b % 4 ? h - 5 : h - 10, 1, b % 4 ? 5 : 10);
@@ -334,15 +334,15 @@ function draw() {
     const ps = t.notes.map(n => n.p); const lo = Math.min(...ps, 200), hi = Math.max(...ps, 0); const rng = Math.max(hi - lo, 1);
     g.fillStyle = col; for (const n of t.notes) g.fillRect(n.s * BEAT_W, y + LANE - 8 - ((n.p - lo) / rng) * (t.inst === 'drums' ? 18 : 28) - 2, Math.max(2, n.d * BEAT_W - 1), 4); });
   // ---- piano roll
-  const t = cur(); roll.width = W; roll.height = (ROLL_HI - ROLL_LO + 1) * RH; rr.width = W; rr.height = RULER; ruler(rr.getContext('2d')!, W, RULER);
+  const t = cur(); const RWd = Math.round(W * RZ); roll.width = RWd; roll.height = (ROLL_HI - ROLL_LO + 1) * RH; rr.width = RWd; rr.height = RULER; ruler(rr.getContext('2d')!, RWd, RULER, RW());
   const r = roll.getContext('2d')!; const sc = SCALES[P.scale];
-  for (let m = ROLL_LO; m <= ROLL_HI; m++) { const y = (ROLL_HI - m) * RH; const inK = sc.includes(((m - P.root) % 12 + 12) % 12); r.fillStyle = inK ? '#191d26' : '#121419'; r.fillRect(0, y, W, RH); r.fillStyle = '#0c0d10'; r.fillRect(0, y + RH - 1, W, 1); }
-  for (let b = 0; b <= P.bars * 16; b++) { r.fillStyle = b % 16 === 0 ? '#3a404c' : b % 4 === 0 ? '#262b35' : '#1a1e26'; r.fillRect(b * BEAT_W / 4, 0, 1, roll.height); }
+  for (let m = ROLL_LO; m <= ROLL_HI; m++) { const y = (ROLL_HI - m) * RH; const inK = sc.includes(((m - P.root) % 12 + 12) % 12); r.fillStyle = inK ? '#191d26' : '#121419'; r.fillRect(0, y, RWd, RH); r.fillStyle = '#0c0d10'; r.fillRect(0, y + RH - 1, W, 1); }
+  for (let b = 0; b <= P.bars * 16; b++) { r.fillStyle = b % 16 === 0 ? '#3a404c' : b % 4 === 0 ? '#262b35' : '#1a1e26'; r.fillRect(b * RW() / 4, 0, 1, roll.height); }
   const showRaw = $<HTMLInputElement>('#showraw').checked && t.raw;
-  if (showRaw) { r.setLineDash([3, 2]); r.strokeStyle = '#f87171'; r.fillStyle = 'rgba(248,113,113,.18)'; r.lineWidth = 1.5; for (const n of t.raw!) { const x = n.s * BEAT_W, y = (ROLL_HI - n.p) * RH, w = Math.max(3, n.d * BEAT_W - 1); r.fillRect(x, y, w, RH - 1); r.strokeRect(x + .75, y + .75, w - 1.5, RH - 2.5); } r.setLineDash([]); }
+  if (showRaw) { r.setLineDash([3, 2]); r.strokeStyle = '#f87171'; r.fillStyle = 'rgba(248,113,113,.18)'; r.lineWidth = 1.5; for (const n of t.raw!) { const x = n.s * RW(), y = (ROLL_HI - n.p) * RH, w = Math.max(3, n.d * RW() - 1); r.fillRect(x, y, w, RH - 1); r.strokeRect(x + .75, y + .75, w - 1.5, RH - 2.5); } r.setLineDash([]); }
   r.font = 'bold 10px ui-sans-serif,system-ui';
-  for (const n of t.notes) { const x = n.s * BEAT_W, y = (ROLL_HI - n.p) * RH, w = Math.max(3, n.d * BEAT_W - 2);
-    r.fillStyle = n === rollSel ? '#ffffff' : hue(t.id); r.globalAlpha = (showRaw ? 0.45 : 0.55) + n.v * 0.45; r.beginPath(); r.roundRect(x + 1, y + 3, w, RH - 6, 3); r.fill(); r.globalAlpha = 1;
+  for (const n of t.notes) { const x = n.s * RW(), y = (ROLL_HI - n.p) * RH, w = Math.max(3, n.d * RW() - 2);
+    r.fillStyle = n === rollSel ? '#ffffff' : hue(t.id); r.globalAlpha = (showRaw ? 0.45 : 0.55) + n.v * 0.45; r.beginPath(); r.roundRect(x + 1, y + (COARSE ? 2 : 3), w, RH - (COARSE ? 4 : 6), 3); r.fill(); r.globalAlpha = 1;
     if (w > 22) { r.fillStyle = '#0b0c10'; r.fillText(noteName(pitchOf(t, n)), x + 4, y + RH - 4); } }
   // left labels (sticky)
   const lab = $<HTMLCanvasElement>('#rlabels'); lab.width = 34; lab.height = roll.height; const l = lab.getContext('2d')!; l.font = '10px ui-sans-serif';
@@ -351,9 +351,9 @@ function draw() {
   drawHead();
 }
 function scrollRollToNotes() { const t = cur(); if (!t.notes.length || t.inst === 'drums') return; const avg = t.notes.reduce((a, n) => a + n.p, 0) / t.notes.length; const sc = $('#rollscroll'); sc.scrollTop = (ROLL_HI - avg) * RH - sc.clientHeight / 2; }
-function drawHead() { const x = posBeat() * BEAT_W; document.querySelectorAll<HTMLElement>('.ph').forEach(p => p.style.left = x + 'px'); const b = Math.max(0, posBeat());
+function drawHead() { const x = posBeat() * BEAT_W; document.querySelectorAll<HTMLElement>('.ph').forEach(p => p.style.left = (p.closest('#rollscroll') ? posBeat() * RW() : x) + 'px'); const b = Math.max(0, posBeat());
   $('#pos').textContent = `${Math.floor(b / 4) + 1}.${Math.floor(b % 4) + 1}  ·  ${(b * spb()).toFixed(1)}s`; }
-(function anim() { requestAnimationFrame(anim); if (playing) { drawHead(); for (const id of ['#tlwrap', '#rollscroll']) { const sc = $(id); const x = posBeat() * BEAT_W; if (x > sc.scrollLeft + sc.clientWidth - 60 || x < sc.scrollLeft) sc.scrollLeft = Math.max(0, x - 60); } } })();
+(function anim() { requestAnimationFrame(anim); if (playing) { drawHead(); for (const id of ['#tlwrap', '#rollscroll']) { const sc = $(id); const x = posBeat() * (id === '#rollscroll' ? RW() : BEAT_W); if (x > sc.scrollLeft + sc.clientWidth - 60 || x < sc.scrollLeft) sc.scrollLeft = Math.max(0, x - 60); } } })();
 // timeline: click = playhead/select; ruler drag = loop
 let loopDrag: number | null = null;
 tl.onpointerdown = e => { const b = e.offsetX / BEAT_W; const lane = Math.floor((e.offsetY - RULER) / LANE);
@@ -362,24 +362,65 @@ tl.onpointerdown = e => { const b = e.offsetX / BEAT_W; const lane = Math.floor(
   startBeat = Math.max(0, Math.floor(b * 4) / 4); if (playing) play(startBeat); draw(); };
 tl.onpointermove = e => { if (loopDrag === null) return; const b = Math.round(e.offsetX / BEAT_W); if (b !== loopDrag) { P.loop = { on: true, s: Math.min(loopDrag, b), e: Math.max(loopDrag, b) }; $<HTMLInputElement>('#loop').checked = true; draw(); } };
 tl.onpointerup = e => { if (loopDrag !== null) { if (Math.round(e.offsetX / BEAT_W) === loopDrag) { startBeat = Math.floor(e.offsetX / BEAT_W * 4) / 4; if (playing) play(startBeat); } loopDrag = null; save(); draw(); } };
-rr.onpointerdown = e => { startBeat = Math.max(0, Math.floor(e.offsetX / BEAT_W * 4) / 4); if (playing) play(startBeat); draw(); };
+rr.onpointerdown = e => { startBeat = Math.max(0, Math.floor(e.offsetX / RW() * 4) / 4); if (playing) play(startBeat); draw(); };
 // piano roll editing
 let drag: { n: Note; mode: 'move' | 'size'; ox: number; os: number; od: number } | null = null;
 const grid = () => +$<HTMLSelectElement>('#grid').value;
 roll.oncontextmenu = e => e.preventDefault();
-const hitAt = (e: PointerEvent | MouseEvent) => { const b = e.offsetX / BEAT_W; const p = ROLL_HI - Math.floor(e.offsetY / RH); return { b, p, hit: cur().notes.find(n => n.p === p && b >= n.s && b <= n.s + n.d) }; };
-roll.onpointerdown = e => { const t = cur(); const { b, p, hit } = hitAt(e);
+const hitAt = (e: PointerEvent | MouseEvent) => { const b = e.offsetX / RW(); const p = ROLL_HI - Math.floor(e.offsetY / RH); return { b, p, hit: cur().notes.find(n => n.p === p && b >= n.s && b <= n.s + n.d) }; };
+roll.onpointerdown = e => { if (e.pointerType !== 'mouse') return touchDown(e); const t = cur(); const { b, p, hit } = hitAt(e);
   if (e.button === 2) { if (hit) { t.notes = t.notes.filter(n => n !== hit); save(); draw(); } return; }
   if (!hit) { const g = grid(); const n = { p, s: Math.floor(b / g) * g, d: g * 2, v: 0.8 }; t.notes.push(n); rollSel = n; drag = { n, mode: 'size', ox: e.offsetX, os: n.s, od: n.d }; }
-  else { rollSel = hit; drag = { n: hit, mode: (hit.s + hit.d - b) * BEAT_W < 7 ? 'size' : 'move', ox: e.offsetX, os: hit.s, od: hit.d }; }
+  else { rollSel = hit; drag = { n: hit, mode: (hit.s + hit.d - b) * RW() < 7 ? 'size' : 'move', ox: e.offsetX, os: hit.s, od: hit.d }; }
   roll.setPointerCapture(e.pointerId); preview(p); draw(); };
-roll.onpointermove = e => { if (!drag) { const { b, hit } = hitAt(e); roll.style.cursor = hit && (hit.s + hit.d - b) * BEAT_W < 7 ? 'ew-resize' : hit ? 'grab' : 'crosshair'; return; }
-  const g = grid(); const db = (e.offsetX - drag.ox) / BEAT_W;
+roll.onpointermove = e => { if (e.pointerType !== 'mouse') return touchMove(e); if (!drag) { const { b, hit } = hitAt(e); roll.style.cursor = hit && (hit.s + hit.d - b) * RW() < 7 ? 'ew-resize' : hit ? 'grab' : 'crosshair'; return; }
+  const g = grid(); const db = (e.offsetX - drag.ox) / RW();
   if (drag.mode === 'move') { drag.n.s = Math.max(0, Math.round((drag.os + db) / g) * g); const np = Math.max(ROLL_LO, Math.min(ROLL_HI, ROLL_HI - Math.floor(e.offsetY / RH))); if (np !== drag.n.p) { drag.n.p = np; preview(np); } }
   else drag.n.d = Math.max(g, Math.round((drag.od + db) / g) * g);
   draw(); };
-roll.onpointerup = () => { if (drag) { drag = null; save(); } };
-roll.ondblclick = e => { const { hit } = hitAt(e); if (hit) { cur().notes = cur().notes.filter(n => n !== hit); save(); draw(); } };
+roll.onpointerup = roll.onpointercancel = e => { if (e.pointerType !== 'mouse') return touchUp(e); if (drag) { drag = null; save(); } };
+roll.ondblclick = e => { if (COARSE) return; const { hit } = hitAt(e); if (hit) { cur().notes = cur().notes.filter(n => n !== hit); save(); draw(); } };
+// ---- touch gestures (pointer events): tap add/select, drag move/scroll, pinch resize/zoom, long-press/double-tap delete
+type TP = { x: number; y: number };
+const tps = new Map<number, TP>();
+let tg: { mode: 'idle' | 'move' | 'scroll' | 'pinch' | 'zoom' | 'done'; x0: number; y0: number; hit?: Note; os: number; op: number; sl: number; st: number; d0: number; notes: Note[]; ods: number[]; z0: number; mid: number; timer?: number } | null = null;
+let lastTap = { n: null as Note | null, t: 0 };
+const buzz = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* */ } };
+const rpos = (x: number, y: number) => { const r = roll.getBoundingClientRect(); const ox = x - r.left, oy = y - r.top; const b = ox / RW(); const p = ROLL_HI - Math.floor(oy / RH); return { ox, oy, b, p, hit: cur().notes.find(n => n.p === p && b >= n.s - 0.1 && b <= n.s + n.d + 0.1) }; };
+function lenLabel(d: number) { const k = Math.max(1, Math.round(d * 8)); const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a; const g = gcd(k, 32); return `${k / g}/${32 / g}`; }
+const tipEl = () => { let el = document.getElementById('rolltip'); if (!el) { el = document.createElement('div'); el.id = 'rolltip'; el.className = 'rolltip'; $('#rollwrap').appendChild(el); } return el; };
+const tip = (s: string | null) => { const el = tipEl(); el.textContent = s || ''; el.style.display = s ? '' : 'none'; };
+const delNote = (n: Note) => { cur().notes = cur().notes.filter(x => x !== n); if (rollSel === n) rollSel = null; buzz(25); save(); draw(); };
+function startPinch() { if (!tg) return; clearTimeout(tg.timer); const [a, b] = [...tps.values()]; tg.d0 = Math.max(24, Math.abs(a.x - b.x)); const h = rpos(a.x, a.y).hit || rpos(b.x, b.y).hit || rpos((a.x + b.x) / 2, (a.y + b.y) / 2).hit;
+  const target = h ? [h] : rollSel ? [rollSel] : []; if (h) rollSel = h;
+  tg.notes = target; tg.ods = target.map(n => n.d); tg.z0 = RZ; tg.mode = target.length ? 'pinch' : 'zoom';
+  const r = roll.getBoundingClientRect(); tg.mid = ((a.x + b.x) / 2 - r.left) / RW(); tg.sl = $('#rollscroll').scrollLeft; tg.x0 = (a.x + b.x) / 2; draw(); if (target.length) tip(lenLabel(target[0].d)); }
+function touchDown(e: PointerEvent) { e.preventDefault(); roll.setPointerCapture(e.pointerId); tps.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (tps.size === 1) { const { hit } = rpos(e.clientX, e.clientY); const sc = $('#rollscroll');
+    tg = { mode: 'idle', x0: e.clientX, y0: e.clientY, hit, os: hit?.s ?? 0, op: hit?.p ?? 0, sl: sc.scrollLeft, st: sc.scrollTop, d0: 0, notes: [], ods: [], z0: RZ, mid: 0 };
+    if (hit) tg.timer = window.setTimeout(() => { if (tg && tg.mode === 'idle' && tg.hit) { delNote(tg.hit); tg.mode = 'done'; } }, 550); }
+  else if (tps.size === 2 && tg && tg.mode !== 'done') { if (tg.mode === 'move' && tg.hit) { tg.hit.s = tg.os; tg.hit.p = tg.op; } startPinch(); } }
+function touchMove(e: PointerEvent) { if (!tps.has(e.pointerId) || !tg) return; e.preventDefault(); tps.set(e.pointerId, { x: e.clientX, y: e.clientY }); const g = grid();
+  if (tps.size >= 2 && (tg.mode === 'pinch' || tg.mode === 'zoom')) { const [a, b] = [...tps.values()]; const ratio = Math.max(24, Math.abs(a.x - b.x)) / tg.d0;
+    if (tg.mode === 'pinch') { let changed = false; tg.notes.forEach((n, i) => { let d = tg!.ods[i] * ratio; d = Math.max(0.125, d >= g ? Math.round(d / g) * g : Math.round(d / 0.125) * 0.125); if (d !== n.d) { n.d = d; changed = true; } });
+      if (changed) { buzz(); tip(lenLabel(tg.notes[0].d)); draw(); } }
+    else { RZ = Math.max(0.35, Math.min(4, tg.z0 * ratio)); draw(); const r0 = $('#rollscroll'); const rr0 = r0.getBoundingClientRect(); r0.scrollLeft = tg.mid * RW() + 34 - ((a.x + b.x) / 2 - rr0.left); tip(`Zoom ${Math.round(RZ * 100)}%`); }
+    return; }
+  if (tps.size !== 1 || tg.mode === 'done') return;
+  const dx = e.clientX - tg.x0, dy = e.clientY - tg.y0;
+  if (tg.mode === 'idle' && Math.hypot(dx, dy) > 8) { clearTimeout(tg.timer); tg.mode = tg.hit ? 'move' : 'scroll'; if (tg.hit) rollSel = tg.hit; }
+  if (tg.mode === 'move' && tg.hit) { const n = tg.hit; n.s = Math.max(0, Math.round((tg.os + dx / RW()) / g) * g); const np = Math.max(ROLL_LO, Math.min(ROLL_HI, tg.op - Math.round(dy / RH))); if (np !== n.p) { n.p = np; preview(np); buzz(4); } draw(); }
+  else if (tg.mode === 'scroll') { const sc = $('#rollscroll'); sc.scrollLeft = tg.sl - dx; sc.scrollTop = tg.st - dy; } }
+function touchUp(e: PointerEvent) { if (!tps.has(e.pointerId)) return; tps.delete(e.pointerId); if (!tg) return; clearTimeout(tg.timer);
+  if (tg.mode === 'pinch' || tg.mode === 'zoom') { if (tg.mode === 'pinch') save(); tip(null); tg = tps.size ? { ...tg, mode: 'done' } : null; return; }
+  if (tg.mode === 'done') { if (!tps.size) tg = null; return; }
+  if (tps.size) return;
+  if (tg.mode === 'idle' && e.type !== 'pointercancel') { const { b, p, hit } = rpos(tg.x0, tg.y0); const now = performance.now();
+    if (hit) { if (lastTap.n === hit && now - lastTap.t < 350) { delNote(hit); lastTap = { n: null, t: 0 }; } else { rollSel = hit; lastTap = { n: hit, t: now }; preview(hit.p); buzz(); draw(); } }
+    else if (p >= ROLL_LO && p <= ROLL_HI) { const g = grid(); const n = { p, s: Math.floor(b / g) * g, d: Math.max(g, 0.5), v: 0.8 }; cur().notes.push(n); rollSel = n; lastTap = { n, t: now }; preview(p); buzz(); save(); draw(); } }
+  else if (tg.mode === 'move') save();
+  tg = null; }
+
 function preview(p: number) { const c = ac(); const t = cur(); playT(t, c, strips.get(t.id)!.input, p + P.transpose, c.currentTime, 0.35, 0.7); }
 
 // ---------- export
