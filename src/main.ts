@@ -2,11 +2,12 @@ import './style.css';
 import { Midi } from '@tonejs/midi';
 import { detectPitch } from './pitch';
 import { NAMES, SCALES, freqToMidiFloat, noteName, snapToScale, NoteStabilizer } from './music';
+import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM, startGM, gmReady, SYNTH_GM } from './gm';
 import { INSTRUMENTS, DRUMS, Inst, FX, playNote, startVoice, makeStrip, Strip, encodeWav } from './audio';
 import { polish, Note } from './polish';
 import { PRESETS, presetNotes } from './drums';
 
-interface Track { id: number; name: string; inst: Inst; vol: number; pan: number; mute: boolean; solo: boolean; fx: FX; notes: Note[]; raw?: Note[] | null; parts?: Record<number, string> }
+interface Track { id: number; name: string; inst: Inst; vol: number; pan: number; mute: boolean; solo: boolean; fx: FX; notes: Note[]; raw?: Note[] | null; parts?: Record<number, string>; gm?: number | null }
 interface Project { bpm: number; root: number; scale: string; transpose: number; bars: number; loop: { on: boolean; s: number; e: number }; tracks: Track[]; polish: { on: boolean; strength: number; latency: number; grid: number } }
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
 const defFx = (): FX => ({ reverb: 0.15, delay: 0, filter: 1, dist: 0, chorus: 0 });
@@ -16,7 +17,7 @@ const defPolish = () => ({ on: true, strength: 0.7, latency: 120, grid: 0.25 });
 function demo(): Project {
   const drums = newTrack('drums', 'Drums'); drums.parts = {};
   for (let b = 0; b < 4; b++) { const id = b === 3 ? 'fill1' : 'pop'; drums.parts[b] = id; drums.notes.push(...presetNotes(PRESETS.find(p => p.id === id)!, b)); }
-  return { bpm: 100, root: 0, scale: 'major', transpose: 0, bars: 8, loop: { on: true, s: 0, e: 16 }, tracks: [newTrack('piano', 'Melody'), newTrack('bass'), drums], polish: defPolish() };
+  return { bpm: 100, root: 0, scale: 'major', transpose: 0, bars: 8, loop: { on: true, s: 0, e: 16 }, tracks: [{ ...newTrack('piano', 'Melody'), gm: 0 }, { ...newTrack('bass'), gm: 33 }, drums], polish: defPolish() };
 }
 let P: Project = load() || demo();
 let sel = P.tracks[0].id;
@@ -67,7 +68,7 @@ function schedule() {
     const end = Math.min(ahead, L.on && !recording && schedBeat < L.e ? L.e : Infinity);
     const toTime = (b: number) => startCtxTime + (b - startBeat) * spb();
     for (const t of P.tracks) { if (!audible(t)) continue; const st = strips.get(t.id)!;
-      for (const n of t.notes) if (n.s >= schedBeat && n.s < end) { const tm = toTime(n.s); playNote(ctx, st.input, t.inst, pitchOf(t, n), tm, n.d * spb(), n.v);
+      for (const n of t.notes) if (n.s >= schedBeat && n.s < end) { const tm = toTime(n.s); playT(t, ctx, st.input, pitchOf(t, n), tm, n.d * spb(), n.v);
         if (midiOut) { const off = performance.now() + (tm - ctx.currentTime) * 1000; midiSend(true, pitchOf(t, n), n.v, t.inst === 'drums', off); midiSend(false, pitchOf(t, n), 0, t.inst === 'drums', off + n.d * spb() * 1000); } } }
     if ((recording && $<HTMLInputElement>('#metro').checked) || $<HTMLInputElement>('#metroplay').checked) for (let b = Math.ceil(schedBeat); b < end; b++) click(toTime(b), ((b % 4) + 4) % 4 === 0);
     if (end === L.e && L.on && !recording && end < ahead) { startCtxTime = toTime(L.e); startBeat = L.s; schedBeat = L.s; continue; }
@@ -76,7 +77,7 @@ function schedule() {
   if (!recording && !L.on && posBeat() > Math.max(P.bars * 4, songEnd(P.tracks))) { stop(); startBeat = 0; draw(); }
 }
 function click(t: number, accent: boolean) { const c = ctx!; const o = c.createOscillator(); const g = c.createGain(); o.frequency.value = accent ? 1600 : 1000; g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05); o.connect(g).connect(master); o.start(t); o.stop(t + 0.06); }
-function updBtns() {
+function updBtns() { const mc = melodic(); $("#instcount").textContent = `${mc}/${MAX_INST} instruments`; $<HTMLButtonElement>("#addtrack").disabled = mc >= MAX_INST;
   $('#rec').classList.toggle('live', recording); $('#rec').querySelector('b')!.textContent = recording ? 'Stop rec' : 'Record';
   $('#play').querySelector('b')!.textContent = playing && !recording ? 'Stop' : 'Play'; $('#play').querySelector('i')!.textContent = playing && !recording ? '■' : '▶';
   const t = cur(); $('#polish').classList.toggle('done', !!t.raw); $('#revert').style.display = t.raw ? '' : 'none';
@@ -114,7 +115,7 @@ const held = new Map<string, { m: number; stop: () => void; startB: number; tr: 
 function noteOn(src: string, m: number, vel = 0.8) {
   noteOff(src); const c = ac(); const t = (recording && takeTrack) || cur();
   const strip = strips.get(t.id)!; const pm = t.inst === 'drums' ? m : m + P.transpose;
-  held.set(src, { m, stop: startVoice(c, strip.input, t.inst, pm, vel), startB: posBeat(), tr: t.id }); midiSend(true, pm, vel, t.inst === 'drums'); lightKey(m, true);
+  held.set(src, { m, stop: (t.gm != null && t.inst !== 'drums' && startGM(c, strip.input, t.gm, pm, vel)) || startVoice(c, strip.input, t.inst, pm, vel), startB: posBeat(), tr: t.id }); midiSend(true, pm, vel, t.inst === 'drums'); lightKey(m, true);
 }
 function noteOff(src: string) {
   const h = held.get(src); if (!h) return; held.delete(src); h.stop(); const t = P.tracks.find(x => x.id === h.tr); lightKey(h.m, false);
@@ -192,7 +193,7 @@ function renderTracks() {
     d.style.setProperty('--c', hue(t.id));
     d.innerHTML = `<div class="trow"><button class="arm ${armed === t.id ? 'on' : ''}" title="Record on this track">●</button><input type="text" class="tname" value="${t.name.replace(/"/g, '')}">
       <button class="m ${t.mute ? 'on' : ''}" title="Mute">M</button><button class="s ${t.solo ? 'on' : ''}" title="Solo">S</button></div>
-      <div class="trow"><select class="inst">${INSTRUMENTS.map(i => `<option ${i === t.inst ? 'selected' : ''}>${i}</option>`).join('')}</select>
+      <div class="trow"><button class="inst ibtn" title="Change instrument">${instLabel(t)}</button>
       <input type="range" class="vol adv" title="Volume" min="0" max="1.2" step="0.01" value="${t.vol}"><input type="range" class="pan adv" title="Pan" min="-1" max="1" step="0.01" value="${t.pan}"><button class="del adv" title="Delete track">✕</button></div>`;
     d.onclick = () => { if (sel !== t.id) { sel = t.id; renderTracks(); renderEditor(); draw(); updBtns(); } };
     const q = (s: string) => d.querySelector(s) as HTMLInputElement;
@@ -200,10 +201,39 @@ function renderTracks() {
     q('.tname').onchange = () => { t.name = q('.tname').value; save(); };
     q('.m').onclick = () => { t.mute = !t.mute; after(); }; q('.s').onclick = () => { t.solo = !t.solo; after(); };
     q('.del').onclick = e => { e.stopPropagation(); if (P.tracks.length > 1 && confirm('Delete track ' + t.name + '?')) { P.tracks = P.tracks.filter(x => x !== t); sel = P.tracks[0].id; after(); } };
-    q('.inst').onchange = () => { t.inst = q('.inst').value as Inst; if (t.inst === 'drums') t.parts ||= {}; after(); };
+    q('.inst').onclick = e => { e.stopPropagation(); if (t.inst !== 'drums') openBrowser(t); };
     q('.vol').oninput = () => { t.vol = +q('.vol').value; syncStrips(); save(); }; q('.pan').oninput = () => { t.pan = +q('.pan').value; syncStrips(); save(); };
     el.appendChild(d); }
 }
+const MAX_INST = 4; const melodic = () => P.tracks.filter(t => t.inst !== 'drums').length;
+function instLabel(t: Track) { if (t.inst === 'drums') return '🥁 Drum kit'; if (t.gm != null) return `${gmCat(t.gm).icon} ${gmLabel(t.gm)}${gmReady(t.gm) ? '' : ' …'}`; return `🎛 ${t.inst} (synth)`; }
+function playT(t: Track, c: BaseAudioContext, out: AudioNode, m: number, tm: number, dur: number, v: number) { if (t.inst !== 'drums' && t.gm != null && playGM(c, out, t.gm, m, tm, dur, v)) return; playNote(c, out, t.inst, m, tm, dur, v); }
+function ensureLoaded(t: Track) { if (t.gm == null || gmReady(t.gm)) return; loadGM(t.gm, ac()).then(ok => { if (!ok) status(`Couldn't load ${gmLabel(t.gm!)} samples; using built-in synth.`); renderTracks(); }); }
+// ---------- instrument browser
+let ibTarget: Track | null = null; let ibCat = -1;
+function openBrowser(t: Track | null) { ibTarget = t; ibCat = t && t.gm != null ? t.gm >> 3 : -1; $('#ibtitle').textContent = t ? `Instrument for "${t.name}"` : 'Add an instrument track'; $<HTMLInputElement>('#ibsearch').value = ''; $('#ib').classList.add('open'); renderBrowser(); }
+function renderBrowser() {
+  const q = $<HTMLInputElement>('#ibsearch').value.trim().toLowerCase();
+  $('#ibcats').innerHTML = [`<button class="chip ${ibCat === -1 ? 'on' : ''}" data-c="-1">All</button>`, ...GM_CATS.map((c, i) => `<button class="chip ${ibCat === i ? 'on' : ''}" data-c="${i}">${c.icon} ${c.name}</button>`), `<button class="chip ${ibCat === 16 ? 'on' : ''}" data-c="16">🎛 Built-in synths</button>`].join('');
+  $('#ibcats').querySelectorAll<HTMLElement>('.chip').forEach(b => b.onclick = () => { ibCat = +b.dataset.c!; renderBrowser(); });
+  const cur = ibTarget; const items: string[] = [];
+  if (ibCat === 16 || q) for (const i of INSTRUMENTS) if (i !== 'drums' && (!q || i.includes(q))) items.push(`<button class="ii ${cur && cur.gm == null && cur.inst === i ? 'on' : ''}" data-s="${i}"><span>🎛</span><b>${i}</b><small>Built-in synth · instant</small></button>`);
+  if (ibCat !== 16 || q) GM.forEach((_, p) => { if (!q && ibCat >= 0 && p >> 3 !== ibCat) return; const l = gmLabel(p); if (q && !l.toLowerCase().includes(q) && !gmCat(p).name.toLowerCase().includes(q)) return;
+    items.push(`<button class="ii ${cur && cur.gm === p ? 'on' : ''}" data-p="${p}"><span>${gmCat(p).icon}</span><b>${l}</b><small>#${p + 1} · ${gmCat(p).name}${gmReady(p) ? ' · loaded' : ''}</small></button>`); });
+  $('#iblist').innerHTML = items.join('') || '<p class="hint">No instruments match.</p>';
+  $('#iblist').querySelectorAll<HTMLElement>('.ii').forEach(b => b.onclick = async () => {
+    const p = b.dataset.p != null ? +b.dataset.p : null, syn = b.dataset.s as Inst | undefined;
+    let t = ibTarget;
+    if (!t) { if (melodic() >= MAX_INST) return; t = newTrack(syn || 'piano', p != null ? gmLabel(p) : undefined); if (syn) t.name = syn[0].toUpperCase() + syn.slice(1); P.tracks.splice(P.tracks.filter(x => x.inst !== 'drums').length, 0, t); sel = t.id; armed = t.id; ibTarget = t; $('#ibtitle').textContent = `Instrument for "${t.name}"`; }
+    else if (t.name === instName(t)) t.name = p != null ? gmLabel(p) : syn![0].toUpperCase() + syn!.slice(1);
+    if (syn) { t.inst = syn; t.gm = null; } else { t.gm = p; const fb = Object.entries(SYNTH_GM).find(([, v]) => v >> 3 === p! >> 3); t.inst = (fb ? fb[0] : 'piano') as Inst; }
+    after(); renderBrowser(); b.classList.add('loading');
+    if (p != null) { status(`Loading ${gmLabel(p)}…`); await loadGM(p, ac()); status(gmReady(p) ? `${gmLabel(p)} ready.` : `Couldn't load ${gmLabel(p)}; using synth.`); }
+    renderTracks(); renderBrowser(); previewInst(t);
+  });
+}
+function instName(t: Track) { return t.gm != null ? gmLabel(t.gm) : t.inst[0].toUpperCase() + t.inst.slice(1); }
+function previewInst(t: Track) { const c = ac(); syncStrips(); const st = strips.get(t.id); if (!st) return; const base = (t.gm ?? 0) >> 3 === 4 ? 36 : 60; [0, 4, 7, 12].forEach((d, i) => playT(t, c, st.input, base + P.root + d, c.currentTime + 0.05 + i * 0.18, 0.5, 0.75)); }
 function after() { syncStrips(); save(); renderTracks(); renderEditor(); draw(); updBtns(); }
 function renderEditor() { requestAnimationFrame(scrollRollToNotes);
   const t = cur(); const el = $('#fx'); el.innerHTML = `<h3>Effects · ${t.name}</h3>` + (['reverb', 'delay', 'chorus', 'dist', 'filter'] as (keyof FX)[]).map(k => `<label>${k === 'dist' ? 'distortion' : k === 'filter' ? 'tone' : k}<input type="range" min="0" max="1" step="0.01" data-k="${k}" value="${t.fx[k]}"></label>`).join('');
@@ -317,31 +347,33 @@ roll.onpointermove = e => { if (!drag) { const { b, hit } = hitAt(e); roll.style
   draw(); };
 roll.onpointerup = () => { if (drag) { drag = null; save(); } };
 roll.ondblclick = e => { const { hit } = hitAt(e); if (hit) { cur().notes = cur().notes.filter(n => n !== hit); save(); draw(); } };
-function preview(p: number) { const c = ac(); const t = cur(); playNote(c, strips.get(t.id)!.input, t.inst, p + P.transpose, c.currentTime, 0.25, 0.7); }
+function preview(p: number) { const c = ac(); const t = cur(); playT(t, c, strips.get(t.id)!.input, p + P.transpose, c.currentTime, 0.35, 0.7); }
 
 // ---------- export
 const dl = (blob: Blob, name: string) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
 const fname = (s: string) => s.replace(/[^\w-]+/g, '_');
 function buildMidi(tracks: Track[]) {
   const m = new Midi(); m.header.setTempo(P.bpm); let ch = 0;
-  for (const t of tracks) { const mt = m.addTrack(); mt.name = t.name; const drum = t.inst === 'drums'; if (!drum && ch === 9) ch++; mt.channel = drum ? 9 : ch++ % 16;
+  for (const t of tracks) { const mt = m.addTrack(); mt.name = t.name; const drum = t.inst === 'drums'; if (!drum && ch === 9) ch++; mt.channel = drum ? 9 : ch++ % 16; if (!drum) mt.instrument.number = t.gm ?? SYNTH_GM[t.inst] ?? 0;
     for (const n of t.notes) mt.addNote({ midi: pitchOf(t, n), time: n.s * spb(), duration: n.d * spb(), velocity: n.v }); }
   return new Blob([m.toArray() as BlobPart], { type: 'audio/midi' });
 }
 function songEnd(tracks: Track[]) { const e = Math.max(0, ...tracks.flatMap(t => t.notes.map(n => n.s + n.d))); return P.loop.on ? Math.max(P.loop.e, e) : e; }
 async function renderWav(tracks: Track[], name: string) {
+  status('Loading instrument samples…'); await Promise.all(tracks.filter(t => t.gm != null && t.inst !== 'drums').map(t => loadGM(t.gm!, ac())));
   const beats = songEnd(tracks); if (!beats) { alert('Nothing to render yet.'); return; }
   status('Rendering WAV…'); const secs = beats * spb() + 2.5; const sr = 44100;
   const oc = new OfflineAudioContext(2, Math.ceil(secs * sr), sr); const mg = oc.createGain(); const comp = oc.createDynamicsCompressor(); mg.connect(comp).connect(oc.destination);
-  for (const t of tracks) { if (!audible(t) && tracks.length > 1) continue; const s = makeStrip(oc, mg, P.bpm); s.update(t.fx, t.vol, t.pan, true); for (const n of t.notes) playNote(oc, s.input, t.inst, pitchOf(t, n), n.s * spb() + 0.05, n.d * spb(), n.v); }
+  for (const t of tracks) { if (!audible(t) && tracks.length > 1) continue; const s = makeStrip(oc, mg, P.bpm); s.update(t.fx, t.vol, t.pan, true); for (const n of t.notes) playT(t, oc, s.input, pitchOf(t, n), n.s * spb() + 0.05, n.d * spb(), n.v); }
   const buf = await oc.startRendering(); dl(encodeWav(buf), name + '.wav'); status('Exported ' + name + '.wav');
 }
 
 // ---------- controls
 function bind() {
+  $('#ibsearch').oninput = () => renderBrowser(); $('#ibclose').onclick = () => $('#ib').classList.remove('open'); $('#ib').onclick = e => { if (e.target === $('#ib')) $('#ib').classList.remove('open'); };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#ib').classList.remove('open'); });
   const bpm = $<HTMLInputElement>('#bpm'), key = $<HTMLSelectElement>('#key'), scale = $<HTMLSelectElement>('#scale'), tr = $<HTMLInputElement>('#transpose'), bars = $<HTMLInputElement>('#bars');
   key.innerHTML = NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join(''); scale.innerHTML = Object.keys(SCALES).map(s => `<option>${s}</option>`).join('');
-  $('#newinst').innerHTML = INSTRUMENTS.map(i => `<option>${i}</option>`).join('');
   const str = $<HTMLInputElement>('#strength'), lat = $<HTMLInputElement>('#lat'), pg = $<HTMLSelectElement>('#pgrid');
   const fill = () => { bpm.value = String(P.bpm); key.value = String(P.root); scale.value = P.scale; tr.value = String(P.transpose); bars.value = String(P.bars); $<HTMLInputElement>('#loop').checked = P.loop.on;
     str.value = String(Math.round(P.polish.strength * 100)); $('#strv').textContent = str.value + '%'; lat.value = String(P.polish.latency); $('#latv').textContent = P.polish.latency + ' ms'; pg.value = String(P.polish.grid); $<HTMLInputElement>('#autopolish').checked = P.polish.on; };
@@ -359,7 +391,8 @@ function bind() {
   $('#rewind').onclick = () => { stop(); startBeat = P.loop.on ? P.loop.s : 0; draw(); };
   $('#rec').onclick = toggleRec; $('#mic').onclick = toggleMic; $('#polish').onclick = () => { doPolish(); if (cur().raw) status(`Polished at ${Math.round(P.polish.strength * 100)}%. Red dashed outlines = what you hummed.`); };
   $('#revert').onclick = () => revert();
-  $('#addtrack').onclick = () => { const t = newTrack($<HTMLSelectElement>('#newinst').value as Inst); P.tracks.push(t); sel = t.id; if (t.inst !== 'drums') armed = t.id; after(); };
+  $('#addtrack').onclick = () => { if (melodic() >= MAX_INST) { status(`Up to ${MAX_INST} instrument tracks (plus drums). Delete one or change its instrument.`); return; } openBrowser(null); };
+  $('#adddrums').onclick = () => { const t = newTrack('drums', 'Drums'); P.tracks.push(t); sel = t.id; after(); };
   $('#quant').onclick = () => { const g = grid(); for (const n of cur().notes) { n.s = Math.round(n.s / g) * g; n.d = Math.max(g, Math.round(n.d / g) * g); } save(); draw(); };
   $('#clear').onclick = () => { if (confirm('Clear all notes on ' + cur().name + '?')) { cur().notes = []; cur().raw = null; if (cur().parts) cur().parts = {}; save(); draw(); renderEditor(); updBtns(); } };
   $('#tup').onclick = () => { cur().notes.forEach(n => n.p++); save(); draw(); }; $('#tdn').onclick = () => { cur().notes.forEach(n => n.p--); save(); draw(); };
@@ -374,5 +407,5 @@ function bind() {
   advBtn.onclick = () => setAdv(!document.body.classList.contains('adv-on')); setAdv(!!localStorage.getItem('h2m-adv'));
   document.addEventListener('click', e => { const m = $('#exportmenu') as HTMLDetailsElement; if (m.open && !m.contains(e.target as Node)) m.open = false; });
 }
-bind(); buildKeyboard(); renderTracks(); renderEditor(); draw(); updBtns(); initMidi();
+P.tracks.forEach(ensureLoaded); bind(); buildKeyboard(); renderTracks(); renderEditor(); draw(); updBtns(); initMidi();
 status('Tip: 1) Start mic  2) Record and hum  3) Polish  4) Play  5) Export');

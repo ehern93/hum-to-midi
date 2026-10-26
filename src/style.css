@@ -47,3 +47,13 @@ footer{border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area
  #hnote{font-size:34px}.hide-sm,.brand span,.step-btn em{display:none}.step-btn{padding:7px 11px}#tracks{width:150px}.track input[type=text]{font-size:10px}header{gap:8px;padding:8px}.card{overflow:visible}body{height:auto;min-height:100%}}
 /* phone landscape: compact vertical space */
 @media (max-height:500px) and (orientation:landscape){body{height:auto;min-height:100%}main{overflow:visible}.card{overflow:visible}footer{position:sticky;bottom:0;z-index:5}#hum{width:180px}.hint{display:none}:root{--kw:24px}#keyboard{height:64px}header{padding:4px 8px}.step-btn{padding:5px 10px}#hnote{font-size:30px}.roll{max-height:55vh}main{padding:6px;gap:6px}}
+
+.ibtn{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:50;padding:12px}.modal.open{display:flex}
+.ibox{background:#13151b;border:1px solid #2d3240;border-radius:16px;width:min(760px,100%);max-height:min(640px,100%);display:flex;flex-direction:column;gap:10px;padding:14px;box-shadow:0 20px 60px #000}
+#ibsearch{background:#1c1f27;border:1px solid #2b303b;border-radius:10px;padding:10px 12px;color:var(--txt);font:inherit;font-size:14px}
+.ibcats{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scroll-snap-type:x proximity;flex-shrink:0;scrollbar-width:thin}.ibcats .chip{white-space:nowrap;scroll-snap-align:start}
+.iblist{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;overflow-y:auto;min-height:120px;scrollbar-width:thin}
+.ii{display:grid;grid-template-columns:30px 1fr;grid-template-rows:auto auto;text-align:left;padding:8px;border-radius:10px;gap:0 6px}.ii span{grid-row:span 2;font-size:22px;align-self:center}.ii b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ii small{color:var(--mut);font-size:11px}
+.ii.on{border-color:var(--acc);background:#1f2140}.ii.loading{opacity:.6}
+@media (max-height:500px){.ibox{max-height:100%;padding:8px}.iblist{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}}

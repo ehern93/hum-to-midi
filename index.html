@@ -39,7 +39,7 @@
  </aside>
  <section class="card grow">
   <div class="arr"><div id="tracks"></div><div id="tlwrap" class="scroll"><div class="rel"><canvas id="timeline"></canvas><div class="ph"></div></div></div></div>
-  <div class="row addrow"><select id="newinst"></select><button id="addtrack" class="ghost">+ Add track</button><span class="hint hide-sm">Drag the top ruler to set a loop · click to move the playhead</span><span class="sp"></span><span id="status" class="hint"></span></div>
+  <div class="row addrow"><button id="addtrack" class="ghost">+ Instrument track</button><button id="adddrums" class="ghost adv">+ Drum track</button><span id="instcount" class="hint"></span><span class="hint hide-sm">Drag the top ruler to set a loop · click to move the playhead</span><span class="sp"></span><span id="status" class="hint"></span></div>
   <div class="editor">
    <div class="row"><h3 id="edtitle">Notes</h3>
     <span id="legend" class="legend"><i class="lg-raw"></i>what you hummed <i class="lg-pol"></i>polished</span><label class="chk"><input id="showraw" type="checkbox" checked>Show before/after</label>
@@ -58,6 +58,9 @@
   </div>
  </section>
 </main>
+<div id="ib" class="modal"><div class="ibox"><div class="row"><h3 id="ibtitle">Instruments</h3><span class="sp"></span><button id="ibclose" class="ghost">Done</button></div>
+ <input id="ibsearch" type="search" placeholder="Search 128 instruments… (e.g. guitar, flute, pad)">
+ <div id="ibcats" class="ibcats"></div><div id="iblist" class="iblist"></div><p class="hint">Tap an instrument to hear it. Real sampled sounds (General MIDI) load on first use.</p></div></div>
 <footer><div class="scroll kbscroll"><div id="keyboard"></div></div></footer>
 <script type="module" src="/src/main.ts"></script>
 </body></html>
