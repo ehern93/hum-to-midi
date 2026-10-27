@@ -22,3 +22,5 @@ export function addNote(l: Lane, p: number, v = .85): LNote { const n = { p, s: 
 export function stretchIn(l: Lane, n: LNote, d: number): boolean { d = Math.max(1, Math.min(4, Math.round(d))); if (d === n.d) return false;
   for (const m of l.notes) if (m !== n && m.s >= n.s + n.d - 1e-6) m.s += d - n.d; n.d = d; return true; }
 export function removeNote(l: Lane, n: LNote) { l.notes = l.notes.filter(x => x !== n); for (const m of l.notes) if (m.s >= n.s + n.d - 1e-6) m.s = Math.max(0, m.s - n.d); }
+/** A brand-new song: default tempo, 2 bars, no beat, empty Piano/Bass/Flute lanes. */
+export const freshSong = () => ({ bpm: 100, bars: 2, lanes: emptyLanes(), active: 0, beat: null as string | null, kit: 'studio' });

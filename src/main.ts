@@ -6,7 +6,7 @@ import { SCALES, freqToMidiFloat, NoteStabilizer } from './music';
 import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM } from './gm';
 import { playNote, makeStrip, Strip, encodeWav } from './audio';
 import { PRESETS, presetNotes, beatNotes, loadKit, playKit } from './drums';
-import { LANES, Lane, LNote, emptyLanes, toLanes, songEnd, addNote, stretchIn, removeNote } from './lanes';
+import { LANES, Lane, LNote, emptyLanes, freshSong, toLanes, songEnd, addNote, stretchIn, removeNote } from './lanes';
 
 type Note = LNote;
 interface Song { bpm: number; bars: number; lanes: Lane[]; active: number; beat: string | null; kit: string }
@@ -21,7 +21,7 @@ function migrate(): Song | null {
   try { const v1 = JSON.parse(localStorage.getItem('hum-studio-v1') || ''); if (v1 && Array.isArray(v1.notes)) return { bpm: v1.bpm || 100, bars: v1.bars || 2, lanes: toLanes(v1.notes, v1.brush), active: 0, beat: v1.beat ?? null, kit: v1.kit || 'studio' }; } catch { /* */ }
   try { const p = JSON.parse(localStorage.getItem('h2m-project-v2') || ''); const t = p.tracks.find((x: any) => x.inst !== 'drums');
     return { bpm: p.bpm || 100, bars: p.bars || 2, lanes: toLanes((t?.notes || []).map((n: any) => ({ p: n.p, s: n.s, d: n.d, v: n.v ?? .85, gm: n.gm ?? t.gm ?? 0 }))), active: 0, beat: p.beat?.id ?? null, kit: p.beat?.kit || 'studio' }; } catch { return null; } }
-function load(): Song { try { const s = JSON.parse(localStorage.getItem(KEY) || ''); if (s && Array.isArray(s.lanes) && s.lanes.length === LANES) return s; } catch { /* */ } return migrate() || { bpm: 100, bars: 2, lanes: emptyLanes(), active: 0, beat: null, kit: 'studio' }; }
+function load(): Song { try { const s = JSON.parse(localStorage.getItem(KEY) || ''); if (s && Array.isArray(s.lanes) && s.lanes.length === LANES) return s; } catch { /* */ } return migrate() || freshSong(); }
 let S = load();
 let saveT = 0; const save = () => { clearTimeout(saveT); saveT = window.setTimeout(saveNow, 400); };
 const saveNow = () => { clearTimeout(saveT); localStorage.setItem(KEY, JSON.stringify(S)); };
@@ -171,6 +171,17 @@ $('#pinuse').onclick = e => { const b = (e.target as Element).closest('[data-pl]
 $('#plist').onclick = e => { const b = (e.target as Element).closest('[data-gm]') as HTMLElement | null; if (b) { pickSound(+b.dataset.gm!); closePicker(); } };
 $('#search').oninput = renderPicker; $('#pclose').onclick = closePicker; $('#picker').onclick = e => { if (e.target === $('#picker')) closePicker(); };
 $('#addbar').onclick = () => { S.bars++; save(); renderSong(); requestAnimationFrame(() => { const l = $('#lane'); l.scrollLeft = l.scrollWidth; }); };
+// ---------- clear all (confirm + 5s undo)
+const OLD_KEYS = [KEY, 'hum-studio-v1', 'h2m-project-v2']; let undoSong: Song | null = null, undoT = 0;
+function clearAll() { stop(); if (micOn) toggleMic(); pending = null; lock = null; showPop(); undoSong = JSON.parse(JSON.stringify(S));
+  clearTimeout(saveT); OLD_KEYS.forEach(k => localStorage.removeItem(k)); S = freshSong() as Song; sel = null; hi = []; songKey = '';
+  renderAll(); renderBeats(); renderTempo(); $('#lane').scrollLeft = 0; $('#beatpanel').hidden = true; $('#xmenu').hidden = true;
+  $('#toast').hidden = true; const u = $('#undo'); u.hidden = false; clearTimeout(undoT); undoT = window.setTimeout(() => { u.hidden = true; undoSong = null; }, 5000); }
+function undoClear() { if (!undoSong) return; S = undoSong; undoSong = null; clearTimeout(undoT); $('#undo').hidden = true; songKey = ''; saveNow(); renderAll(); renderBeats(); renderTempo(); toast('Song restored'); }
+$('#clear').onclick = () => { $('#confirm').hidden = false; };
+$('#cno').onclick = () => { $('#confirm').hidden = true; };
+$('#cyes').onclick = () => { $('#confirm').hidden = true; clearAll(); };
+$('#undobtn').onclick = undoClear;
 $('#play').onclick = () => playing ? stop() : play();
 $('#beatbtn').onclick = () => { const k = $('#beatpanel'); k.hidden = !k.hidden; };
 $('#beats').onclick = e => { const b = (e.target as Element).closest('[data-id]') as HTMLElement | null; if (b) pickBeat(b.dataset.id || null); };
