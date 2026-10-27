@@ -19,3 +19,8 @@ describe('lanes', () => {
   it('placeAt inside a long note goes after it; gaps after are kept when room', () => { const l = emptyLanes()[0]; const a = addNote(l, 60); stretchIn(l, a, 4); const z = placeAt(l, 50, 1, 8);
     const c = placeAt(l, 67, 1, 2); expect(c.s).toBe(4); expect(z.s).toBe(8); const e = placeAt(l, 69, 2, 7); expect(e.s).toBe(7); expect(z.s).toBe(9); });
 });
+
+import { previewPitch as pvp } from '../src/lanes';
+describe('tap preview pitch (regression: pasted bass note silent)', () => {
+  it('lifts low notes into an audible range and keeps mid notes', () => { expect(pvp(64)).toBe(64); expect(pvp(40)).toBe(52); expect(pvp(28)).toBe(52); expect(pvp(48)).toBe(48); });
+});

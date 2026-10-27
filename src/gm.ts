@@ -62,3 +62,5 @@ export function startGM(ctx: AudioContext, out: AudioNode, p: number, m: number,
 }
 /** Default GM program for each built-in synth (used for MIDI export and as the sampled upgrade). */
 export const SYNTH_GM: Record<string, number> = { piano: 0, 'e-piano': 4, 'synth lead': 81, 'square lead': 80, bass: 33, 'sub bass': 38, strings: 48, pad: 89, pluck: 45, bell: 14, organ: 16 };
+
+export const hasGM = (p: number) => banks.has(p);

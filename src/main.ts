@@ -3,10 +3,10 @@ import { plan } from './sched';
 import { renderStaff, keyFifths, spell, autoClef } from './score';
 import { detectPitch } from './pitch';
 import { SCALES, freqToMidiFloat, NoteStabilizer } from './music';
-import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM } from './gm';
+import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM, hasGM } from './gm';
 import { playNote, makeStrip, Strip, encodeWav } from './audio';
 import { PRESETS, presetNotes, beatNotes, loadKit, playKit } from './drums';
-import { LANES, Lane, LNote, emptyLanes, freshSong, toLanes, songEnd, addNote, stretchIn, removeNote, placeAt } from './lanes';
+import { LANES, Lane, LNote, emptyLanes, freshSong, toLanes, songEnd, addNote, stretchIn, removeNote, placeAt, previewPitch } from './lanes';
 
 type Note = LNote;
 interface Song { bpm: number; bars: number; lanes: Lane[]; active: number; beat: string | null; kit: string }
@@ -82,10 +82,13 @@ function showPop() { const has = pending !== null; $('#pop').hidden = !has; $<HT
   const p = pending!; $('#pnote').textContent = nName(p); $('#pnote').style.color = color(p, 38); $('#pop').style.background = color(p, 92);
   $('#pstaff').innerHTML = renderStaff([{ p, s: 0, d: 1, id: 0 }], { clef: autoClef([p]), fifths: fifths(), beatW: 30, beats: 1, single: true, height: 96, color: '#222' }).svg; }
 function keep() { if (pending === null) return; const lane = AL(); const n = addNote(lane, pending); fit();
-  loadGM(lane.gm, ac()).then(() => preview(n.p, lane.gm)); lock = pending; pending = null; sel = null; showPop(); buzz(); save(); renderAll();
+  preview(n.p, lane.gm); lock = pending; pending = null; sel = null; showPop(); buzz(); save(); renderAll();
   requestAnimationFrame(() => { const l = $('#lane'); const x = (n.s + n.d) * BW; if (x > l.scrollLeft + l.clientWidth - 20) l.scrollLeft = x - l.clientWidth + 80; }); }
 function discard() { lock = pending; pending = null; showPop(); }
-function preview(p: number, gm: number) { const c = ac(); playMel(c, mel.input, { p, gm, v: .8 }, c.currentTime, .45); }
+const pvLog: { p: number; gm: number; how: string }[] = [];
+function preview(p: number, gm: number) { const c = ac(); if (c.state !== 'running') c.resume(); const q = previewPitch(p);
+  const go = (how: string) => { pvLog.push({ p: q, gm, how }); if (pvLog.length > 50) pvLog.shift(); if (!playGM(c, master, gm, q, c.currentTime + .01, .45, .9)) playNote(c, master, 'piano', q, c.currentTime + .01, .45, .9); };
+  if (hasGM(gm)) go('sample'); else { go('synth'); loadGM(gm, c); } }
 function fit() { const need = Math.ceil(notesEnd() / 4); if (need > S.bars) S.bars = need; }
 const laneOf = (n: Note) => S.lanes.find(l => l.notes.includes(n))!;
 function stretch(n: Note, d: number) { if (!stretchIn(laneOf(n), n, d)) return; fit(); buzz(); save(); renderSong(); }
@@ -162,7 +165,7 @@ function closeLp() { $('#lpm').hidden = true; lpCtx = null; }
 $('#lpm').onclick = e => { const b = (e.target as Element).closest('[data-a]') as HTMLElement | null; if (!b || !lpCtx) return; const { l, beat, note } = lpCtx; closeLp();
   if (b.dataset.a === 'copy' && note) { clip = { p: note.p, d: note.d }; sel = null; renderAll(); toast('Copied — long-press any spot in a lane to place it'); }
   else if (b.dataset.a === 'del' && note) { sel = note; del(); }
-  else if (b.dataset.a === 'place' && clip) { const lane = S.lanes[l]; const n = placeAt(lane, clip.p, clip.d, beat); S.active = l; sel = null; fit(); save(); renderAll(); buzz(); loadGM(lane.gm, ac()).then(() => preview(n.p, lane.gm)); } };
+  else if (b.dataset.a === 'place' && clip) { const lane = S.lanes[l]; const n = placeAt(lane, clip.p, clip.d, beat); S.active = l; sel = null; fit(); save(); renderAll(); buzz(); preview(n.p, lane.gm); } };
 $('#clipx').onclick = () => { clip = null; renderAll(); };
 document.addEventListener('pointerdown', e => { if (!$('#lpm').hidden && !(e.target as Element).closest('#lpm')) closeLp(); }, true);
 
@@ -180,7 +183,7 @@ document.addEventListener('pointerdown', e => { if (!$('#lpm').hidden && !(e.tar
     if (mode === 'grip' && tgt) { moved = true; stretch(tgt, d0 + (e.clientX - x0) / BW); } else if ((mode === 'tap' || mode === 'row') && (moved || Math.abs(e.clientX - x0) > 8)) { moved = true; clearTimeout(lpT); lane.scrollLeft -= e.clientX - x0; x0 = e.clientX; } });
   const up = (e: PointerEvent) => { pts.delete(e.pointerId); clearTimeout(lpT); if (pts.size) return;
     if (!moved && mode === 'row') { sel = null; if (tl !== S.active) setActive(tl); else renderAll(); }
-    if (!moved && mode === 'tap' && tgt) { const n = tgt; if (tl !== S.active) { S.active = tl; save(); } sel = sel === n ? null : n; if (sel) preview(sel.p, S.lanes[tl].gm); renderAll(); }
+    if (!moved && mode === 'tap' && tgt) { const n = tgt; if (tl !== S.active) { S.active = tl; save(); } sel = sel === n ? null : n; preview(n.p, S.lanes[tl].gm); renderAll(); }
     tgt = null; mode = ''; };
   lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up); lane.addEventListener('contextmenu', e => e.preventDefault()); }
 $('#hum').onclick = () => toggleMic(); $('#yes').onclick = keep; $('#no').onclick = discard; $('#del').onclick = del;
@@ -212,5 +215,5 @@ $('#export').onclick = () => { const m = $('#xmenu'); m.hidden = !m.hidden; };
 $('#xwav').onclick = () => { $('#xmenu').hidden = true; renderWav(); };
 $('#xmid').onclick = async () => { $('#xmenu').hidden = true; dl(await buildMidi(), 'hum-studio.mid'); toast('Saved hum-studio.mid'); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
-(window as any).__hs = { get song() { return S; }, get clip() { return clip; }, posBeat: () => posBeat() };
+(window as any).__hs = { get song() { return S; }, get clip() { return clip; }, pv: pvLog, posBeat: () => posBeat() };
 showPop(); renderAll(); renderBeats(); renderTempo(); syncPlay();

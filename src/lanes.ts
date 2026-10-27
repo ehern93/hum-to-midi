@@ -32,3 +32,6 @@ export function placeAt(l: Lane, p: number, d: number, at: number, v = .85): LNo
   const shift = later.length ? Math.max(0, s + d - first) : 0; for (const m of later) m.s += shift;
   const n = { p, s, d, v }; l.notes.push(n); l.notes.sort((a, b) => a.s - b.s); return n;
 }
+
+/** Pitch used for tap-preview: low notes are lifted by octaves so phone speakers can play them. */
+export function previewPitch(p: number): number { let q = Math.round(p); while (q < 48) q += 12; return q; }
