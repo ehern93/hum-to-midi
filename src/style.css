@@ -92,3 +92,33 @@ body.studio #humview{display:none}body.studio #studiobtn{background:var(--acc,#7
 body.rollmode .staffscroll,body.rollmode #selbar,body.rollmode #staffhint,body.rollmode #clefsel,body.rollmode .zoom{display:none}
 #rollhost .roll{max-height:46vh}
 @media (max-width:600px){.humbtn{width:84px;height:84px}.hvnote{font-size:46px;min-width:90px}.hvstaff{width:120px;height:130px}.lbl{width:100%}}
+/* kid mode (default) */
+body:not(.grown)>header,body:not(.grown)>.advbar,body:not(.grown)>main,body:not(.grown)>footer{display:none!important}
+body.grown #kid{display:none}
+#kid{flex:1;display:flex;flex-direction:column;gap:10px;padding:12px 12px calc(12px + env(safe-area-inset-bottom));min-height:0;background:radial-gradient(circle at 50% 0,#1e1b4b,#0b0c10 70%)}
+.k-top{display:flex;gap:10px;align-items:center}
+.kbig{border:0;border-radius:50%;width:84px;height:84px;font-size:38px;color:#fff;cursor:pointer;box-shadow:0 6px 18px #0006;touch-action:manipulation}
+.kplay{background:#3b82f6;width:72px;height:72px;font-size:32px}.kplay.on{background:#f59e0b}
+.kchip{border:0;border-radius:18px;min-width:60px;height:60px;font-size:28px;background:#1f2333;color:#fff;cursor:pointer;touch-action:manipulation}.kchip.on{background:#7c3aed}
+.kbeats{display:flex;gap:8px;overflow-x:auto}.kbeats button{flex:0 0 auto;border:0;border-radius:18px;padding:12px 16px;font-size:20px;background:#1f2333;color:#fff}.kbeats button.on{background:#7c3aed}
+.k-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:260px;position:relative}
+.khum{width:min(52vw,220px);height:min(52vw,220px);border-radius:50%;border:0;background:radial-gradient(circle at 35% 30%,#c4b5fd,#7c3aed);box-shadow:0 10px 40px #7c3aed66;font-size:min(20vw,84px);cursor:pointer;touch-action:manipulation}
+.khum.on{background:radial-gradient(circle at 35% 30%,#fda4af,#e11d48);animation:pulse 1.2s infinite}
+.kpop{display:flex;align-items:center;gap:10px;background:#fff;border-radius:24px;padding:8px 14px;animation:pop .25s}.kpop[hidden]{display:none}
+@keyframes pop{from{transform:scale(.6);opacity:0}}
+.knote{font-size:64px;font-weight:900;line-height:1;min-width:70px;text-align:center}
+.kstaff svg{display:block}.kstaff line{stroke:#555}.kstaff text{fill:#333}
+.kyn{display:flex;gap:40px}.kyes{background:#22c55e}.kno{background:#ef4444}.kyn button:disabled{opacity:.25}
+.ktools{display:flex;gap:8px;align-items:center;background:#161a26;border-radius:20px;padding:8px}.ktools[hidden]{display:none}
+.kinst{display:flex;gap:6px;overflow-x:auto;flex:1}.kinst button{flex:0 0 auto;width:56px;height:56px;border-radius:16px;border:2px solid transparent;background:#232838;font-size:28px;cursor:pointer}.kinst button.on{border-color:#fbbf24;background:#3a3150}
+.kdel{background:#3f1d24}
+.k-song{display:flex;gap:8px;align-items:stretch}
+.klane{flex:1;overflow-x:auto;overflow-y:hidden;background:#11131c;border-radius:18px;touch-action:pan-x;-webkit-user-select:none;user-select:none}
+.kblocks{position:relative;height:170px}
+.kbeatline{position:absolute;top:0;bottom:0;width:1px;background:#262b3a}.kbarline{background:#5b6274;width:2px}
+.kbarno{position:absolute;top:4px;font-size:12px;color:#6b7386}
+.kb{padding-right:12px;box-sizing:border-box;position:absolute;border-radius:14px;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#111;font-weight:800;font-size:18px;box-shadow:0 3px 8px #0007;touch-action:none;transition:outline .1s}
+.kb small{font-size:12px;opacity:.75}.kb .ic{font-size:14px}.kb.sel{outline:4px solid #fff}.kb.hi{transform:scale(1.08);box-shadow:0 0 0 4px #fbbf24,0 0 24px #fbbf24}
+.kb .grip{position:absolute;right:0;top:0;bottom:0;width:18px;border-radius:0 14px 14px 0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#0006}
+.kb.sel .grip{background:#ffffff88}
+.kbar{height:auto;min-width:56px}

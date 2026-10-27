@@ -1,5 +1,5 @@
 import { snapToScale } from './music';
-export interface Note { p: number; s: number; d: number; v: number }
+export interface Note { p: number; s: number; d: number; v: number; gm?: number }
 export interface PolishOpts { bpm: number; latencyMs: number; strength: number; grid: number; root: number; scale: number[] | null }
 /** Turn a raw hummed take into a cleaner performance. Times are in beats. */
 export function polish(raw: Note[], o: PolishOpts): Note[] {

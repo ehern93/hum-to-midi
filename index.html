@@ -1,5 +1,16 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0c10"><title>HumStudio · hum it, polish it, export it</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>"></head><body>
+<div id="kid">
+ <div class="k-top"><button id="kplay" class="kbig kplay" aria-label="Play">▶</button><button id="kbeat" class="kchip" aria-label="Beat">🥁</button><span class="sp"></span><button id="kgear" class="kchip" aria-label="Grown-up mode" title="Grown-up mode">⚙️</button></div>
+ <div id="kbeats" class="kbeats" hidden></div>
+ <div class="k-center">
+  <button id="khum" class="khum" aria-label="Hum"><span>🎤</span></button>
+  <div id="kpop" class="kpop" hidden><div id="knote" class="knote">C</div><div id="kstaff" class="kstaff"></div></div>
+  <div class="kyn"><button id="kno" class="kbig kno" aria-label="Discard">✖</button><button id="kyes" class="kbig kyes" aria-label="Keep">✔</button></div>
+ </div>
+ <div id="ktools" class="ktools" hidden><div id="kinst" class="kinst"></div><button id="kdel" class="kchip kdel" aria-label="Delete">🗑</button></div>
+ <div class="k-song"><div id="klane" class="klane"><div id="kblocks" class="kblocks"></div></div><button id="kbar" class="kchip kbar" aria-label="Add bar">＋</button></div>
+</div>
 <header>
  <div class="brand">🎵 <span>HumStudio</span></div>
  <nav class="flow">
@@ -14,7 +25,7 @@
  </nav>
  <div class="song"><button id="rewind" class="ghost" title="Back to start">⏮</button><span id="pos" class="lcd">1.1</span>
   <label>BPM<input id="bpm" type="number" min="40" max="240"></label><label>Key<select id="key"></select><select id="scale"></select></label>
-  <label class="chk"><input id="loop" type="checkbox">Loop</label><button id="advtoggle" class="ghost studio-only">⚙ Advanced</button><button id="studiobtn" class="ghost">🎛 Studio</button></div>
+  <label class="chk"><input id="loop" type="checkbox">Loop</label><button id="advtoggle" class="ghost studio-only">⚙ Advanced</button><button id="studiobtn" class="ghost">🎛 Studio</button><button id="kidbtn" class="ghost">🧒 Kid mode</button></div>
 </header>
 <div class="advbar adv">
  <label>Transpose<input id="transpose" type="number" min="-24" max="24" value="0"></label><label>Bars<input id="bars" type="number" min="1" max="128"></label>

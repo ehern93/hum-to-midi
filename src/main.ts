@@ -1,4 +1,5 @@
 import { plan } from './sched';
+import { splitByInstrument } from './group';
 import { renderStaff, keyFifths, spell, noteValue, autoClef, yToStep, StaffOpts, Clef } from './score';
 import './style.css';
 import { detectPitch } from './pitch';
@@ -62,7 +63,7 @@ function schedule() {
   const metro = (recording && $<HTMLInputElement>('#metro').checked) || $<HTMLInputElement>('#metroplay').checked;
   for (const g of r.segs) { const toTime = (b: number) => g.t0 + (b - g.b0) * spb();
     for (const t of P.tracks) { if (!audible(t)) continue; const st = strips.get(t.id); if (!st) continue;
-      for (const n of t.notes) if (n.s >= g.from && n.s < g.to) { const tm = toTime(n.s); if (tm < now - 0.03) continue; playT(t, ctx, st.input, pitchOf(t, n), Math.max(tm, now), n.d * spb(), n.v); } }
+      for (const n of t.notes) if (n.s >= g.from && n.s < g.to) { const tm = toTime(n.s); if (tm < now - 0.03) continue; playT(t, ctx, st.input, pitchOf(t, n), Math.max(tm, now), n.d * spb(), n.v, n.gm); } }
     if (metro) for (let b = Math.ceil(g.from); b < g.to; b++) if (b < 0 || b < recStartAt || !beatOn()) click(Math.max(now, toTime(b)), ((b % 4) + 4) % 4 === 0); }
   if (!recording && !L.on && posBeat() > Math.max(P.bars * 4, songEnd(P.tracks))) { stop(); startBeat = 0; draw(); }
 }
@@ -148,7 +149,7 @@ window.addEventListener('keyup', e => { const k = e.key.toLowerCase(); if (KEYMA
 // ---------- hum detection
 let micOn = false, analyser: AnalyserNode, micStream: MediaStream; const stab = new NoteStabilizer(3, 5); let humNote: number | null = null; let smoothF = 0; let humPeak = 0;
 async function toggleMic() {
-  if (micOn) { micOn = false; hvMic(false); micStream.getTracks().forEach(t => t.stop()); noteOff('hum'); $('#mic').classList.remove('on'); $('#mic').querySelector('b')!.textContent = 'Start mic'; return; }
+  if (micOn) { micOn = false; hvMic(false); kidMic(false); micStream.getTracks().forEach(t => t.stop()); noteOff('hum'); $('#mic').classList.remove('on'); $('#mic').querySelector('b')!.textContent = 'Start mic'; return; }
   const c = ac();
   try { micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
   catch { alert('Microphone access denied.'); return; }
@@ -156,7 +157,7 @@ async function toggleMic() {
   // estimated input→note latency: half the analysis window + stabilizer frames + device latency
   const est = Math.round(((analyser.fftSize / 2) / c.sampleRate + 3 / 60 + (c.baseLatency || 0.01)) * 1000 + 20);
   if (!localStorage.getItem('h2m-lat-set')) { P.polish.latency = est; $<HTMLInputElement>('#lat').value = String(est); $('#latv').textContent = est + ' ms'; }
-  micOn = true; hvMic(true); $('#mic').classList.add('on'); $('#mic').querySelector('b')!.textContent = 'Mic on'; humLoop();
+  micOn = true; hvMic(true); kidMic(true); $('#mic').classList.add('on'); $('#mic').querySelector('b')!.textContent = 'Mic on'; humLoop();
 }
 let humBuf: Float32Array<ArrayBuffer> | null = null; let humLast = 0;
 function humLoop(now = performance.now()) {
@@ -174,7 +175,7 @@ function humLoop(now = performance.now()) {
     $('#hnote').textContent = noteName(nearest); $('#hfreq').textContent = smoothF.toFixed(1) + ' Hz';
     $('#hcents').textContent = (cents >= 0 ? '+' : '') + cents + '¢'; $<HTMLElement>('#needle').style.left = 50 + cents + '%';
   } else { smoothF = 0; }
-  hvLive(n);
+  hvLive(n); kidLive(n);
   const s = stab.push(n);
   if (s !== humNote) { humNote = s; if (s === null) noteOff('hum'); else if ($<HTMLInputElement>('#humplay').checked || recording) noteOn('hum', s); $('#hout').textContent = s === null ? '' : '→ ' + noteName(s); if (s === null) $('#hnote').textContent = '—'; }
 }
@@ -202,11 +203,11 @@ function renderTracks() {
 }
 const MAX_INST = 4; const melodic = () => P.tracks.filter(t => t.inst !== 'drums').length;
 function instLabel(t: Track) { if (t.inst === 'drums') return '🥁 Drum kit'; if (t.gm != null) return `${gmCat(t.gm).icon} ${gmLabel(t.gm)}${gmReady(t.gm) ? '' : ' …'}`; return `🎛 ${t.inst} (synth)`; }
-function playT(t: Track, c: BaseAudioContext, out: AudioNode, m: number, tm: number, dur: number, v: number) { if (t.inst === 'drums' && playKit(c, out, P.beat!.kit, m, tm, v)) return; if (t.inst !== 'drums' && t.gm != null && playGM(c, out, t.gm, m, tm, dur, v)) return; playNote(c, out, t.inst, m, tm, dur, v); }
+function playT(t: Track, c: BaseAudioContext, out: AudioNode, m: number, tm: number, dur: number, v: number, gm?: number) { if (t.inst === 'drums' && playKit(c, out, P.beat!.kit, m, tm, v)) return; const g = gm ?? t.gm; if (t.inst !== 'drums' && g != null && playGM(c, out, g, m, tm, dur, v)) return; playNote(c, out, t.inst, m, tm, dur, v); }
 function ensureLoaded(t: Track) { if (t.gm == null || gmReady(t.gm)) return; loadGM(t.gm, ac()).then(ok => { if (!ok) status(`Couldn't load ${gmLabel(t.gm!)} samples; using built-in synth.`); renderTracks(); }); }
 // ---------- instrument browser
-let ibTarget: Track | null = null; let ibCat = -1;
-function openBrowser(t: Track | null) { ibTarget = t; ibCat = t && t.gm != null ? t.gm >> 3 : -1; $('#ibtitle').textContent = t ? `Instrument for "${t.name}"` : 'Add an instrument track'; $<HTMLInputElement>('#ibsearch').value = ''; $('#ib').classList.add('open'); renderBrowser(); }
+let ibNote: Note | null = null; let ibTarget: Track | null = null; let ibCat = -1;
+function openBrowser(t: Track | null) { ibNote = null; ibTarget = t; ibCat = t && t.gm != null ? t.gm >> 3 : -1; $('#ibtitle').textContent = t ? `Instrument for "${t.name}"` : 'Add an instrument track'; $<HTMLInputElement>('#ibsearch').value = ''; $('#ib').classList.add('open'); renderBrowser(); }
 function renderBrowser() {
   const q = $<HTMLInputElement>('#ibsearch').value.trim().toLowerCase();
   $('#ibcats').innerHTML = [`<button class="chip ${ibCat === -1 ? 'on' : ''}" data-c="-1">All</button>`, ...GM_CATS.map((c, i) => `<button class="chip ${ibCat === i ? 'on' : ''}" data-c="${i}">${c.icon} ${c.name}</button>`), `<button class="chip ${ibCat === 16 ? 'on' : ''}" data-c="16">🎛 Built-in synths</button>`].join('');
@@ -218,6 +219,7 @@ function renderBrowser() {
   $('#iblist').innerHTML = items.join('') || '<p class="hint">No instruments match.</p>';
   $('#iblist').querySelectorAll<HTMLElement>('.ii').forEach(b => b.onclick = async () => {
     const p = b.dataset.p != null ? +b.dataset.p : null, syn = b.dataset.s as Inst | undefined;
+    if (ibNote) { if (p != null) { kidSetInst(ibNote, p); $('#ib').classList.remove('open'); } return; }
     let t = ibTarget;
     if (!t) { if (melodic() >= MAX_INST) return; t = newTrack(syn || 'piano', p != null ? gmLabel(p) : undefined); if (syn) t.name = syn[0].toUpperCase() + syn.slice(1); P.tracks.splice(P.tracks.filter(x => x.inst !== 'drums').length, 0, t); sel = t.id; armed = t.id; ibTarget = t; $('#ibtitle').textContent = `Instrument for "${t.name}"`; }
     else if (t.name === instName(t)) t.name = p != null ? gmLabel(p) : syn![0].toUpperCase() + syn!.slice(1);
@@ -318,7 +320,7 @@ function ruler(g: CanvasRenderingContext2D, W: number, h: number, BEAT_W = 36) {
 let drawPend = 0; function draw() { if (!drawPend) drawPend = requestAnimationFrame(() => { drawPend = 0; drawNow(); }); }
 const sz = (c: HTMLCanvasElement, w: number, h: number) => { if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } else c.getContext('2d')!.clearRect(0, 0, w, h); };
 function drawNow() {
-  renderScore();
+  renderScore(); renderKid();
   const W = Math.max(P.bars * 4, Math.ceil(songEnd(P.tracks) / 4) * 4) * BEAT_W;
   sz(tl, W, RULER + P.tracks.length * LANE); const g = tl.getContext('2d')!;
   g.fillStyle = '#0f1116'; g.fillRect(0, 0, W, tl.height); ruler(g, W, RULER);
@@ -350,7 +352,7 @@ function drawHead() { const x = posBeat() * BEAT_W; document.querySelectorAll<HT
   const pt = `${Math.floor(b / 4) + 1}.${Math.floor(b % 4) + 1}  ·  ${(b * spb()).toFixed(1)}s`; if (pt !== lastPos) { lastPos = pt; $('#pos').textContent = pt; } }
 let lastPos = '';
 let animOn = false; function kickAnim() { if (!animOn) { animOn = true; requestAnimationFrame(anim); } }
-function anim() { if (!playing) { animOn = false; drawHead(); return; } requestAnimationFrame(anim); { drawHead(); hvAnim(); for (const id of ['#tlwrap', '#rollscroll']) { const sc = $(id); const x = posBeat() * (id === '#rollscroll' ? RW() : BEAT_W); if (x > sc.scrollLeft + sc.clientWidth - 60 || x < sc.scrollLeft) sc.scrollLeft = Math.max(0, x - 60); } } }
+function anim() { if (!playing) { animOn = false; drawHead(); return; } requestAnimationFrame(anim); { drawHead(); hvAnim(); kidAnim(); for (const id of ['#tlwrap', '#rollscroll']) { const sc = $(id); const x = posBeat() * (id === '#rollscroll' ? RW() : BEAT_W); if (x > sc.scrollLeft + sc.clientWidth - 60 || x < sc.scrollLeft) sc.scrollLeft = Math.max(0, x - 60); } } }
 // timeline: click = playhead/select; ruler drag = loop
 let loopDrag: number | null = null;
 tl.onpointerdown = e => { const b = e.offsetX / BEAT_W; const lane = Math.floor((e.offsetY - RULER) / LANE);
@@ -425,17 +427,17 @@ const dl = (blob: Blob, name: string) => { const a = document.createElement('a')
 const fname = (s: string) => s.replace(/[^\w-]+/g, '_');
 async function buildMidi(tracks: Track[]) {
   const { Midi } = await import('@tonejs/midi'); const m = new Midi(); m.header.setTempo(P.bpm); let ch = 0;
-  for (const t of tracks) { const mt = m.addTrack(); mt.name = t.name; const drum = t.inst === 'drums'; if (!drum && ch === 9) ch++; mt.channel = drum ? 9 : ch++ % 16; if (!drum) mt.instrument.number = t.gm ?? SYNTH_GM[t.inst] ?? 0;
+  for (const t of splitByInstrument(tracks, gmLabel)) { const mt = m.addTrack(); mt.name = t.name; const drum = t.inst === 'drums'; if (!drum && ch === 9) ch++; mt.channel = drum ? 9 : ch++ % 16; if (!drum) mt.instrument.number = t.gm ?? SYNTH_GM[t.inst] ?? 0;
     for (const n of t.notes) mt.addNote({ midi: pitchOf(t, n), time: n.s * spb(), duration: n.d * spb(), velocity: n.v }); }
   return new Blob([m.toArray() as BlobPart], { type: 'audio/midi' });
 }
 function songEnd(tracks: Track[]) { const e = Math.max(0, ...tracks.flatMap(t => t.notes.map(n => n.s + n.d))); return P.loop.on ? Math.max(P.loop.e, e) : e; }
 async function renderWav(tracks: Track[], name: string) {
-  status('Loading instrument samples…'); await loadKit(P.beat!.kit, ac()); await Promise.all(tracks.filter(t => t.gm != null && t.inst !== 'drums').map(t => loadGM(t.gm!, ac())));
+  status('Loading instrument samples…'); await loadKit(P.beat!.kit, ac()); await Promise.all([...new Set(tracks.filter(t => t.inst !== 'drums').flatMap(t => [t.gm, ...t.notes.map(n => n.gm)]).filter((g): g is number => g != null))].map(g => loadGM(g, ac())));
   const beats = songEnd(tracks); if (!beats) { alert('Nothing to render yet.'); return; }
   status('Rendering WAV…'); const secs = beats * spb() + 2.5; const sr = 44100;
   const oc = new OfflineAudioContext(2, Math.ceil(secs * sr), sr); const mg = oc.createGain(); const comp = oc.createDynamicsCompressor(); mg.connect(comp).connect(oc.destination);
-  for (const t of tracks) { if (!audible(t) && tracks.length > 1) continue; const s = makeStrip(oc, mg, P.bpm); s.update(t.fx, t.vol, t.pan, true); for (const n of t.notes) playT(t, oc, s.input, pitchOf(t, n), n.s * spb() + 0.05, n.d * spb(), n.v); }
+  for (const t of tracks) { if (!audible(t) && tracks.length > 1) continue; const s = makeStrip(oc, mg, P.bpm); s.update(t.fx, t.vol, t.pan, true); for (const n of t.notes) playT(t, oc, s.input, pitchOf(t, n), n.s * spb() + 0.05, n.d * spb(), n.v, n.gm); }
   const buf = await oc.startRendering(); dl(encodeWav(buf), name + '.wav'); status('Exported ' + name + '.wav');
 }
 
@@ -521,7 +523,7 @@ function nudgeDur(dir: number) { if (!hvSel) return; let i = DSTEPS.findIndex(x 
 function delSel() { if (!hvSel) return; const t = cur(); const n = hvSel; t.notes = t.notes.filter(x => x !== n); shiftAfter(t, n.s + n.d, -n.d); const prev = t.notes.filter(x => x.s < n.s).pop() || null; hvSel = prev; t.raw = null; after(); }
 function setZoom(z: number, cx?: number) { const sc = $('#staffscroll'); const old = SZ; SZ = Math.max(0.5, Math.min(3, z)); const anchor = cx ?? sc.clientWidth / 2; const left = (sc.scrollLeft + anchor) * (SZ / old) - anchor; $('#zv').textContent = Math.round(SZ * 100) + '%'; renderScore(); sc.scrollLeft = Math.max(0, left); }
 let hvHiIdx = -2;
-function hvAnim() { if (document.body.classList.contains('studio')) return; const t = cur(); const b = posBeat(); const n = t.notes.find(x => b >= x.s && b < x.s + x.d) || null; const idx = n ? t.notes.indexOf(n) : -1; if (idx === hvHiIdx) return; hvHiIdx = idx; hvHi = n; renderScore(); if (n) scrollToNote(n); }
+function hvAnim() { if (document.body.classList.contains('studio') || !document.body.classList.contains('grown')) return; const t = cur(); const b = posBeat(); const n = t.notes.find(x => b >= x.s && b < x.s + x.d) || null; const idx = n ? t.notes.indexOf(n) : -1; if (idx === hvHiIdx) return; hvHiIdx = idx; hvHi = n; renderScore(); if (n) scrollToNote(n); }
 // staff gestures
 { const sc = $('#staffscroll'); const pts = new Map<number, { x: number; y: number }>(); let mode: '' | 'note' | 'scroll' | 'pinch' = ''; let target: Note | null = null; let sx = 0, sy = 0, sl = 0, stepAcc = 0, moved = false, pd0 = 0, z0 = 1, durI = 0;
   const hit = (e: PointerEvent): Note | null => { const g = (e.target as Element).closest?.('.sn') as HTMLElement | null; if (g) return cur().notes[+g.dataset.id!] || null;
@@ -563,3 +565,59 @@ function hvAnim() { if (document.body.classList.contains('studio')) return; cons
   const playSync = () => { const p = $('#play'); const on = p.querySelector('b')!.textContent === 'Stop'; $('#hvplay').textContent = on ? '■ Stop' : '▶ Play'; $('#hvplay').classList.toggle('on', on); if (!on && hvHi) { hvHi = null; hvHiIdx = -2; renderScore(); } };
   new MutationObserver(playSync).observe($('#play'), { subtree: true, childList: true, characterData: true });
   renderHvTracks(); renderDurs(); paintLive(); renderScore(); }
+
+// ================= Kid mode (default screen) =================
+const KID_INST = [{ gm: 0, i: '🎹' }, { gm: 24, i: '🎸' }, { gm: 73, i: '🪈' }, { gm: 40, i: '🎻' }, { gm: 56, i: '🎺' }, { gm: 80, i: '🎛️' }, { gm: 14, i: '🔔' }];
+const KBW = 64; let kPending: number | null = null, kSel: Note | null = null, kInst = 0, kHi: Note | null = null;
+const kColor = (p: number) => `hsl(${(((p % 12) + 12) % 12) * 30},85%,65%)`;
+const kName = (p: number) => spell(p, fifths()).name.replace(/-?\d+$/, '');
+const instIcon = (gm: number | undefined) => KID_INST.find(k => k.gm === gm)?.i ?? (gm != null ? gmCat(gm).icon : '🎹');
+function kTrack(): Track { let t = P.tracks.find(x => x.inst !== 'drums'); if (!t) { t = newTrack('piano', 'Melody'); t.gm = 0; P.tracks.unshift(t); syncStrips(); } return t; }
+function kidMic(on: boolean) { $('#khum').classList.toggle('on', on); }
+let kLock: number | null = null;
+function kidLive(n: number | null) { if (n === null) { kLock = null; return; } if (n === kPending || n === kLock) return; kLock = null; kPending = n; kShowPop(); }
+function kShowPop() { const pop = $('#kpop'); const has = kPending !== null; pop.hidden = !has; ($('#kyes') as HTMLButtonElement).disabled = !has; ($('#kno') as HTMLButtonElement).disabled = !has; if (!has) return;
+  const p = kPending!; $('#knote').textContent = kName(p); $('#knote').style.color = `hsl(${(p % 12) * 30},80%,40%)`; pop.style.background = `hsl(${(p % 12) * 30},90%,92%)`;
+  $('#kstaff').innerHTML = renderStaff([{ p, s: 0, d: 1, id: 0 }], { clef: autoClef([p]), fifths: fifths(), beatW: 40, beats: 1, single: true, height: 150, color: '#222' }).svg; }
+function kEnd(t: Track) { return Math.max(0, ...t.notes.map(n => n.s + n.d)); }
+function kFit(t: Track) { const need = Math.ceil(kEnd(t) / 4); if (need > P.bars) P.bars = need; if (P.beat?.id) applyBeat(); }
+function kKeep() { if (kPending === null) return; const t = kTrack(); const s = Math.ceil(kEnd(t) - 1e-6); const n: Note = { p: kPending, s, d: 1, v: 0.85, gm: kInst }; t.notes.push(n); t.raw = null; sortNotes(t); kSel = null; kFit(t);
+  loadGM(kInst, ac()); kPlayNote(n); kLock = kPending; kPending = null; kShowPop(); buzz(); after(); requestAnimationFrame(() => { const l = $('#klane'); l.scrollLeft = l.scrollWidth; }); }
+function kDiscard() { kLock = kPending; kPending = null; kShowPop(); }
+function kPlayNote(n: Note) { const c = ac(); const t = kTrack(); syncStrips(); playT(t, c, strips.get(t.id)!.input, n.p + P.transpose, c.currentTime, 0.45, 0.8, n.gm); }
+function kidSetInst(n: Note, gm: number) { n.gm = gm; kInst = gm; loadGM(gm, ac()).then(() => kPlayNote(n)); save(); renderKid(true); }
+function kStretch(n: Note, d: number) { d = Math.max(1, Math.min(4, Math.round(d))); if (d === n.d) return; const t = kTrack(); shiftAfter(t, n.s + n.d, d - n.d, n); n.d = d; t.raw = null; kFit(t); buzz(); after(); }
+function kDelete() { if (!kSel) return; const t = kTrack(); const n = kSel; t.notes = t.notes.filter(x => x !== n); shiftAfter(t, n.s + n.d, -n.d); kSel = null; after(); }
+let kKey = '';
+function renderKid(force = false) { if (document.body.classList.contains('grown')) return; const t = kTrack(); if (kSel && !t.notes.includes(kSel)) kSel = null;
+  const beats = Math.max(P.bars * 4, Math.ceil(kEnd(t) / 4) * 4); const ps = t.notes.map(n => n.p); const lo = Math.min(...ps, 60), hi = Math.max(...ps, 72); const H = 170, BH = 46;
+  const key = JSON.stringify([t.notes, beats, kSel && t.notes.indexOf(kSel), kHi && t.notes.indexOf(kHi)]); if (key === kKey && !force) return; kKey = key;
+  const out: string[] = []; for (let b = 0; b <= beats; b++) out.push(`<div class="kbeatline${b % 4 === 0 ? ' kbarline' : ''}" style="left:${b * KBW}px"></div>` + (b % 4 === 0 && b < beats ? `<span class="kbarno" style="left:${b * KBW + 6}px">${b / 4 + 1}</span>` : ''));
+  t.notes.forEach((n, i) => { const y = 22 + (hi === lo ? 0.5 : (hi - n.p) / (hi - lo)) * (H - BH - 28); const dl = Math.abs(n.d - Math.round(n.d)) < 1e-6 ? String(Math.round(n.d)) : n.d.toFixed(2).replace(/0+$/, '');
+    out.push(`<div class="kb${n === kSel ? ' sel' : ''}${n === kHi ? ' hi' : ''}" data-i="${i}" style="left:${n.s * KBW + 3}px;top:${y}px;width:${n.d * KBW - 6}px;height:${BH}px;background:${kColor(n.p)}"><span class="ic">${instIcon(n.gm ?? t.gm ?? undefined)}</span>${kName(n.p)}<small>${dl}</small><span class="grip" data-grip="1">⟷</span></div>`); });
+  const k = $('#kblocks'); k.style.width = (beats * KBW + 2) + 'px'; k.innerHTML = out.join('');
+  const tools = $('#ktools'); tools.hidden = !kSel; if (kSel) { const g = kSel.gm ?? t.gm ?? 0; $('#kinst').innerHTML = KID_INST.map(x => `<button data-gm="${x.gm}" class="${x.gm === g ? 'on' : ''}" aria-label="${gmLabel(x.gm)}">${x.i}</button>`).join('') + `<button data-gm="more" class="${KID_INST.some(x => x.gm === g) ? '' : 'on'}" aria-label="More">${KID_INST.some(x => x.gm === g) ? '➕' : instIcon(g)}</button>`; } }
+function kidAnim() { if (document.body.classList.contains('grown')) return; const t = kTrack(); const b = posBeat(); const n = t.notes.find(x => b >= x.s && b < x.s + x.d) || null; if (n === kHi) return; kHi = n; renderKid();
+  if (n) { const l = $('#klane'); const x = n.s * KBW; if (x > l.scrollLeft + l.clientWidth - 80 || x < l.scrollLeft) l.scrollLeft = Math.max(0, x - 40); } }
+{ const lane = $('#klane'); const pts = new Map<number, number>(); let tgt: Note | null = null, mode = '', x0 = 0, d0 = 1, pd0 = 0, moved = false;
+  lane.addEventListener('pointerdown', e => { const el = (e.target as Element).closest('.kb') as HTMLElement | null; pts.set(e.pointerId, e.clientX);
+    if (pts.size === 2 && kSel) { mode = 'pinch'; tgt = kSel; d0 = kSel.d; const a = [...pts.values()]; pd0 = Math.abs(a[0] - a[1]) || 1; return; }
+    if (!el) { mode = ''; return; } lane.setPointerCapture(e.pointerId); tgt = kTrack().notes[+el.dataset.i!]; x0 = e.clientX; d0 = tgt.d; moved = false; mode = (e.target as Element).closest('[data-grip]') ? 'grip' : 'tap'; e.preventDefault(); });
+  lane.addEventListener('pointermove', e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, e.clientX); if (!tgt) return;
+    if (mode === 'pinch' && pts.size === 2) { const a = [...pts.values()]; kStretch(tgt, d0 * Math.abs(a[0] - a[1]) / pd0); return; }
+    if (mode === 'grip') { moved = true; kStretch(tgt, d0 + (e.clientX - x0) / KBW); }
+    else if (mode === 'tap' && Math.abs(e.clientX - x0) > 8) { moved = true; lane.scrollLeft -= e.clientX - x0; x0 = e.clientX; } });
+  const up = (e: PointerEvent) => { pts.delete(e.pointerId); if (pts.size) return; if (tgt && mode !== 'pinch' && !moved) { kSel = kSel === tgt ? null : tgt; if (kSel) kPlayNote(kSel); renderKid(true); } else if (!tgt && mode === '' ) { /* empty tap */ } tgt = null; mode = ''; };
+  lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up);
+  $('#khum').onclick = () => toggleMic(); $('#kyes').onclick = kKeep; $('#kno').onclick = kDiscard; $('#kdel').onclick = kDelete;
+  $('#kinst').onclick = e => { const b = (e.target as Element).closest('[data-gm]') as HTMLElement | null; if (!b || !kSel) return; if (b.dataset.gm === 'more') { openBrowser(kTrack()); ibNote = kSel; ibCat = -1; renderBrowser(); $('#ibtitle').textContent = 'Pick a sound'; } else kidSetInst(kSel, +b.dataset.gm!); };
+  $('#kbar').onclick = () => { P.bars++; if (P.beat?.id) applyBeat(); after(); requestAnimationFrame(() => { const l = $('#klane'); l.scrollLeft = l.scrollWidth; }); };
+  $('#kplay').onclick = () => { if (playing) stop(); else { P.loop.on = false; ($('#loop') as HTMLInputElement).checked = false; if (P.beat?.id) applyBeat(); play(0); } updBtns(); };
+  const KB = [{ id: '', i: '🚫' }, ...PRESETS.filter(p => p.group === 'Grooves').slice(0, 6).map(p => ({ id: p.id, i: p.name }))];
+  const rb = () => { $('#kbeats').innerHTML = KB.map(b => `<button data-id="${b.id}" class="${(P.beat?.id || '') === b.id ? 'on' : ''}">${b.i}</button>`).join(''); $('#kbeat').classList.toggle('on', !!P.beat?.id); };
+  $('#kbeat').onclick = () => { const k = $('#kbeats'); k.hidden = !k.hidden; rb(); };
+  $('#kbeats').onclick = e => { const b = (e.target as Element).closest('[data-id]') as HTMLElement | null; if (!b) return; pickBeat(b.dataset.id || null); if (b.dataset.id) previewPreset(b.dataset.id); rb(); };
+  const setGrown = (g: boolean) => { document.body.classList.toggle('grown', g); localStorage.setItem('h2m-grown', g ? '1' : ''); kKey = ''; draw(); };
+  $('#kgear').onclick = () => setGrown(true); $('#kidbtn').onclick = () => setGrown(false); if (localStorage.getItem('h2m-grown')) document.body.classList.add('grown');
+  new MutationObserver(() => { const on = playing; $('#kplay').textContent = on ? '■' : '▶'; $('#kplay').classList.toggle('on', on); if (!on && kHi) { kHi = null; renderKid(); } }).observe($('#play'), { subtree: true, childList: true, characterData: true });
+  kShowPop(); renderKid(true); }
