@@ -16,7 +16,7 @@
  </div>
  <div class="deck">
   <div class="humcol">
-   <div class="microw"><button id="hum" class="hum" aria-label="Hum"><span>🎤</span></button>
+   <div class="microw"><button id="hum" class="hum" aria-label="Hum"><span>🎤</span></button><button id="humsong" class="humsong" aria-label="Hum a Song"><span>🎶</span><b>Hum a<br>Song</b></button>
     <div id="pop" class="pop" hidden><div id="pnote" class="pnote">C</div><div id="pstaff" class="pstaff"></div></div></div>
    <div id="humlbl" class="humlbl">Tap to hum</div>
    <div class="yn"><button id="no" class="big no" aria-label="Discard">✖</button><button id="yes" class="big yes" aria-label="Keep">✔</button></div>
@@ -38,6 +38,12 @@
 <div id="songs" class="songs" hidden><div class="shead"><button id="sback" class="chip">← Studio</button><b>Your songs</b><span></span></div><div id="slist" class="slist"></div></div>
 <div id="namebox" class="confirm" hidden><div class="cbox"><p id="ntitle">Name your song</p><input id="ninput" maxlength="40" placeholder="Song name" autocomplete="off"><div class="crow"><button id="nno" class="chip">Cancel</button><button id="nyes" class="chip cyes ok">Save</button></div></div></div>
 <div id="ask" class="confirm" hidden><div class="cbox"><p id="atitle"></p><small id="asub"></small><div class="crow"><button id="ano" class="chip">Cancel</button><button id="ayes" class="chip cyes">OK</button></div></div></div>
+<div id="hsong" class="confirm" hidden><div class="cbox hsbox">
+ <div id="hsrec"><p>🎶 Hum your song</p><small id="hstime">Listening… 20s left</small><div class="hsbar"><i id="hsfill"></i></div><div class="crow"><button id="hscancel" class="chip">Cancel</button><button id="hsstop" class="chip cyes">■ Stop</button></div></div>
+ <div id="hswork" hidden><p>Finding your notes…</p><div class="hsbar busy"><i></i></div></div>
+ <div id="hsprev" hidden><p id="hstitle">Found notes</p><small id="hsinfo"></small><div id="hsnotes" class="hsnotes"></div>
+  <div class="crow"><button id="hsplay" class="chip">▶ Preview</button></div><div class="crow"><button id="hsno" class="chip cyes">✖ Discard</button><button id="hsyes" class="chip cyes ok">✔ Keep</button></div></div>
+</div></div>
 <div id="undo" class="undo" hidden><span>Song cleared</span><button id="undobtn">Undo</button></div>
 <div id="confirm" class="confirm" hidden><div class="cbox"><p>Clear your whole song?</p><small>All notes, lanes, beat and tempo reset.</small><div class="crow"><button id="cno" class="chip">Cancel</button><button id="cyes" class="chip cyes">Clear</button></div></div></div>
 <script type="module" src="/src/main.ts"></script>

@@ -5,9 +5,10 @@ import { detectPitch } from './pitch';
 import { SCALES, freqToMidiFloat, NoteStabilizer } from './music';
 import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM, hasGM, VOICES, voice, midiProgram } from './gm';
 import * as lib from './songs';
+import { analyze, Phrase } from './phrase';
 import { playNote, makeStrip, Strip, encodeWav } from './audio';
 import { PRESETS, presetNotes, beatNotes, loadKit, playKit } from './drums';
-import { LANES, Lane, LNote, emptyLanes, freshSong, toLanes, songEnd, addNote, stretchIn, removeNote, placeAt, previewPitch } from './lanes';
+import { LANES, Lane, LNote, emptyLanes, freshSong, nextSpot, toLanes, songEnd, addNote, stretchIn, removeNote, placeAt, previewPitch } from './lanes';
 
 type Note = LNote;
 interface Song { bpm: number; bars: number; lanes: Lane[]; active: number; beat: string | null; kit: string; name?: string; sid?: string }
@@ -219,6 +220,43 @@ $<HTMLInputElement>('#bpm').oninput = e => setBpm(+(e.target as HTMLInputElement
 $('#xwav').onclick = () => { closeMenu(); renderWav(); };
 $('#xmid').onclick = async () => { closeMenu(); dl(await buildMidi(), 'hum-studio.mid'); toast('Saved hum-studio.mid'); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
+// ---------- Hum a Song: record a phrase, analyse it off the main thread, preview, keep into the active lane
+const HS_MAX = 20; let hs: { stream: MediaStream; node: AudioWorkletNode; src: MediaStreamAudioSourceNode; chunks: Float32Array[]; t0: number; raf: number; done: boolean } | null = null;
+let hsRes: Phrase | null = null; let hsWorker: Worker | null = null;
+const hsShow = (w: 'rec' | 'work' | 'prev') => { $('#hsong').hidden = false; $('#hsrec').hidden = w !== 'rec'; $('#hswork').hidden = w !== 'work'; $('#hsprev').hidden = w !== 'prev'; };
+const WK = `registerProcessor('hs-rec',class extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}})`;
+let wkReady: Promise<void> | null = null;
+function laneRange(gm: number): [number, number] { const g = (voice(gm)?.g ?? gmCat(gm).name).toLowerCase();
+  if (g.includes('bass')) return [36, 52]; if (/mallet|bell|wind|flute|pipe|reed/.test(g)) return [62, 84]; if (/string|brass|ensemble/.test(g)) return [55, 76]; return [55, 74]; }
+async function humSong() { if (micOn) toggleMic(); stop(); const c = ac();
+  let stream: MediaStream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } }); } catch { toast('Microphone access was denied.'); return; }
+  try { wkReady ||= c.audioWorklet.addModule(URL.createObjectURL(new Blob([WK], { type: 'text/javascript' }))); await wkReady; } catch { stream.getTracks().forEach(t => t.stop()); toast('Recording is not supported here.'); return; }
+  const src = c.createMediaStreamSource(stream); const node = new AudioWorkletNode(c, 'hs-rec'); const chunks: Float32Array[] = [];
+  node.port.onmessage = e => chunks.push(e.data); const sink = c.createGain(); sink.gain.value = 0; src.connect(node).connect(sink).connect(c.destination);
+  hs = { stream, node, src, chunks, t0: performance.now(), raf: 0, done: false }; hsShow('rec'); buzz(15);
+  const tick = () => { if (!hs || hs.done) return; const el = (performance.now() - hs.t0) / 1000; $('#hsfill').style.width = Math.min(100, el / HS_MAX * 100) + '%';
+    $('#hstime').textContent = `Listening… ${Math.max(0, Math.ceil(HS_MAX - el))}s left · tap Stop when done`; if (el >= HS_MAX) { hsStop(true); return; } hs.raf = requestAnimationFrame(tick); }; tick(); }
+function hsEnd() { if (!hs) return null; const h = hs; h.done = true; cancelAnimationFrame(h.raf); h.node.port.onmessage = null; try { h.src.disconnect(); h.node.disconnect(); } catch { /* */ } h.stream.getTracks().forEach(t => t.stop()); hs = null; return h; }
+function hsStop(analyseIt: boolean) { const h = hsEnd(); if (!h) return; if (!analyseIt) { $('#hsong').hidden = true; return; }
+  const n = h.chunks.reduce((s, c) => s + c.length, 0); const x = new Float32Array(n); let o = 0; for (const c of h.chunks) { x.set(c, o); o += c.length; }
+  if (n < ctx!.sampleRate * .5) { $('#hsong').hidden = true; toast('That was too short — hum a little longer.'); return; }
+  hsShow('work'); const msg = { x, sr: ctx!.sampleRate, bpm: S.bpm, range: laneRange(AL().gm) }; const t0 = performance.now();
+  const done = (r: Phrase) => { (window as any).__hsLast = { ms: Math.round(performance.now() - t0), worker: !!hsWorker }; hsRes = r; hsPreview(); };
+  try { hsWorker ||= new Worker(new URL('./phrase.worker.ts', import.meta.url), { type: 'module' }); hsWorker.onmessage = e => done(e.data); hsWorker.onerror = () => { hsWorker = null; done(analyze(x, msg.sr, msg.bpm, msg.range)); }; hsWorker.postMessage(msg, [x.buffer]); }
+  catch { hsWorker = null; setTimeout(() => done(analyze(x, msg.sr, msg.bpm, msg.range)), 30); } }
+function hsPreview() { const r = hsRes!; if (!r.notes.length) { $('#hsong').hidden = true; toast('No notes heard — try humming louder, “doo doo doo”.'); hsRes = null; return; }
+  const ln = r.notes[r.notes.length - 1]; const beats = ln.s + ln.d; $('#hstitle').textContent = `Found ${r.notes.length} note${r.notes.length > 1 ? 's' : ''}`;
+  $('#hsinfo').textContent = `${r.key.name} · ${beats} beats · for lane ${S.active + 1} (${sname(AL().gm)})${r.shift ? ` · moved ${r.shift > 0 ? 'up' : 'down'} ${Math.abs(r.shift / 12)} octave${Math.abs(r.shift) > 12 ? 's' : ''}` : ''}`;
+  const W = 34; let at = 0; const out: string[] = []; for (const n of r.notes) { if (n.s > at) out.push(`<span class="rest" style="width:${(n.s - at) * W - 3}px"></span>`); out.push(`<span style="width:${n.d * W - 3}px;background:${color(n.p)}">${nName(n.p)}</span>`); at = n.s + n.d; }
+  $('#hsnotes').innerHTML = out.join(''); hsShow('prev'); loadGM(AL().gm, ac()); }
+let hsPlayT = 0;
+function hsPlay() { if (!hsRes) return; const c = ac(); const gm = AL().gm; const go = () => { const t0 = c.currentTime + .08; for (const n of hsRes!.notes) playMel(c, master, { p: n.p, gm, v: n.v }, t0 + n.s * spb(), n.d * spb()); }; if (hasGM(gm)) go(); else loadGM(gm, c).then(go); clearTimeout(hsPlayT); }
+function hsKeep() { if (!hsRes) return; const lane = AL(); const start = playing ? Math.floor(posBeat()) : nextSpot(lane);
+  for (const n of hsRes.notes) placeAt(lane, n.p, n.d, start + n.s, n.v); const cnt = hsRes.notes.length; hsRes = null; $('#hsong').hidden = true; fit(); sel = null; save(); renderAll(); buzz();
+  toast(`Added ${cnt} notes to lane ${S.active + 1}`); requestAnimationFrame(() => { const l = $('#lane'); l.scrollLeft = Math.max(0, start * BW - 40); }); }
+$('#humsong').onclick = humSong; $('#hsstop').onclick = () => hsStop(true); $('#hscancel').onclick = () => hsStop(false);
+$('#hsplay').onclick = hsPlay; $('#hsyes').onclick = hsKeep; $('#hsno').onclick = () => { hsRes = null; $('#hsong').hidden = true; };
+
 // ---------- save system: songs saved on this device (localStorage 'hum-studio-songs')
 const songSec = () => notesEnd() * spb();
 function renderName() { $('#sname').textContent = (S.name || 'Untitled') + (dirty() ? ' •' : ''); }

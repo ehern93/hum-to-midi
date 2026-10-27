@@ -79,3 +79,8 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
 .pgrp h4{margin:10px 0 4px}
 @media (max-width:420px){.top .chip{padding-left:7px;padding-right:7px;font-size:13px}}
 @media (max-width:420px){.ttl h1{display:none}.sname{font-size:15px;font-weight:700;color:inherit;max-width:30vw}.ttl{flex:1}}
+.humsong{flex:0 0 auto;width:64px;height:64px;border-radius:18px;border:0;background:linear-gradient(160deg,#a78bfa,#6d28d9);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;box-shadow:0 4px 14px #0007;padding:0}
+.humsong span{font-size:22px;line-height:1}.humsong b{font-size:10px;line-height:1.05}
+.hsbox{width:min(360px,92vw)}.hsbar{height:10px;border-radius:6px;background:#1e2438;overflow:hidden;margin-top:12px}.hsbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#a78bfa,#f472b6);transition:width .1s linear}
+.hsbar.busy i{width:35%;animation:hsb 1s ease-in-out infinite alternate}@keyframes hsb{from{margin-left:0}to{margin-left:65%}}
+.hsnotes{display:flex;gap:3px;overflow-x:auto;margin-top:12px;padding-bottom:4px;min-height:44px}.hsnotes span{flex:0 0 auto;height:40px;border-radius:8px;color:#111;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}.hsnotes .rest{background:#1e2438}
