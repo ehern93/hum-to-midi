@@ -1,0 +1,1 @@
+{"name":"Hum Studio","short_name":"Hum Studio","description":"Hum a melody, pick sounds, add a beat, export WAV/MIDI.","start_url":"/","display":"standalone","orientation":"portrait","background_color":"#0b0c10","theme_color":"#0b0c10","icons":[{"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}

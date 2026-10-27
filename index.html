@@ -1,101 +1,31 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0c10"><title>HumStudio · hum it, polish it, export it</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>"></head><body>
-<div id="kid">
- <div class="k-top"><button id="kplay" class="kbig kplay" aria-label="Play">▶</button><button id="kbeat" class="kchip" aria-label="Beat">🥁</button><span class="sp"></span><button id="kgear" class="kchip" aria-label="Grown-up mode" title="Grown-up mode">⚙️</button></div>
- <div id="kbeats" class="kbeats" hidden></div>
- <div class="k-center">
-  <button id="khum" class="khum" aria-label="Hum"><span>🎤</span></button>
-  <div id="kpop" class="kpop" hidden><div id="knote" class="knote">C</div><div id="kstaff" class="kstaff"></div></div>
-  <div class="kyn"><button id="kno" class="kbig kno" aria-label="Discard">✖</button><button id="kyes" class="kbig kyes" aria-label="Keep">✔</button></div>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0c10"><title>Hum Studio</title>
+<meta name="description" content="Hum Studio — hum a note, keep it, pick a sound, add a beat, and export WAV or MIDI. Your phone is an instrument.">
+<meta name="application-name" content="Hum Studio"><meta name="apple-mobile-web-app-title" content="Hum Studio"><meta name="mobile-web-app-capable" content="yes">
+<meta property="og:title" content="Hum Studio"><meta property="og:description" content="Hum a melody, pick sounds, add a beat, export WAV/MIDI.">
+<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg" type="image/svg+xml">
+</head><body>
+<div id="app">
+ <header class="top"><button id="play" class="big play" aria-label="Play">▶</button><h1>Hum Studio</h1><span class="sp"></span>
+  <button id="beatbtn" class="chip">🥁 Beat</button>
+  <div class="xwrap"><button id="export" class="chip" aria-label="Export">⬇ Export</button><div id="xmenu" class="xmenu" hidden><button id="xwav">🔊 WAV audio</button><button id="xmid">🎼 MIDI file</button></div></div>
+ </header>
+ <div id="beatpanel" class="beatpanel" hidden>
+  <div id="beats" class="beats"></div>
+  <div class="tempo"><div id="tempos" class="tempos"></div><input id="bpm" type="range" min="60" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
  </div>
- <div id="ktools" class="ktools" hidden><div id="kinst" class="kinst"></div><button id="kdel" class="kchip kdel" aria-label="Delete">🗑</button></div>
- <div class="k-song"><div id="klane" class="klane"><div id="kblocks" class="kblocks"></div></div><button id="kbar" class="kchip kbar" aria-label="Add bar">＋</button></div>
+ <div class="center">
+  <button id="hum" class="hum" aria-label="Hum"><span>🎤</span></button><div id="humlbl" class="humlbl">Tap to hum</div>
+  <div id="pop" class="pop" hidden><div id="pnote" class="pnote">C</div><div id="pstaff" class="pstaff"></div></div>
+  <div class="yn"><button id="no" class="big no" aria-label="Discard">✖</button><button id="yes" class="big yes" aria-label="Keep">✔</button></div>
+ </div>
+ <div class="soundbar"><div id="scount" class="scount"></div><div id="sounds" class="sounds"></div></div>
+ <div id="tools" class="tools" hidden><button id="tsound" class="chip tsound"></button><button id="del" class="chip del" aria-label="Delete note">🗑</button></div>
+ <div class="song"><div id="lane" class="lane"><div id="blocks" class="blocks"></div></div><button id="addbar" class="chip addbar" aria-label="Add bar">＋<small>bar</small></button></div>
 </div>
-<header>
- <div class="brand">🎵 <span>HumStudio</span></div>
- <nav class="flow">
-  <button id="mic" class="step-btn"><i>🎤</i><b>Start mic</b><em>1</em></button>
-  <button id="rec" class="step-btn rec"><i>●</i><b>Record</b><em>2</em></button>
-  <div class="polish-grp"><button id="polish" class="step-btn"><i>✨</i><b>Polish</b><em>3</em></button>
-   <label class="strength" title="How much to correct timing">Strength <input id="strength" type="range" min="0" max="100"><span id="strv"></span></label>
-   <button id="revert" class="ghost" title="Undo polish, back to exactly what you hummed">↺ Raw</button></div>
-  <button id="play" class="step-btn"><i>▶</i><b>Play</b><em>4</em></button>
-  <details id="exportmenu" class="step-btn-wrap"><summary class="step-btn"><i>⬇</i><b>Export</b><em>5</em></summary>
-   <div class="menu"><button id="xwav">Song · WAV audio</button><button id="xmid">Song · MIDI</button><hr><small class="hint">Project</small><button id="xjson">Save project file</button><label class="file">Open project file<input id="ijson" type="file" accept=".json"></label><button id="new">New project</button></div></details>
- </nav>
- <div class="song"><button id="rewind" class="ghost" title="Back to start">⏮</button><span id="pos" class="lcd">1.1</span>
-  <label>BPM<input id="bpm" type="number" min="40" max="240"></label><label>Key<select id="key"></select><select id="scale"></select></label>
-  <label class="chk"><input id="loop" type="checkbox">Loop</label><button id="advtoggle" class="ghost studio-only">⚙ Advanced</button><button id="studiobtn" class="ghost">🎛 Studio</button><button id="kidbtn" class="ghost">🧒 Kid mode</button></div>
-</header>
-<div class="advbar adv">
- <label>Transpose<input id="transpose" type="number" min="-24" max="24" value="0"></label><label>Bars<input id="bars" type="number" min="1" max="128"></label>
- <label class="chk"><input id="metro" type="checkbox" checked>Click while recording</label><label class="chk"><input id="metroplay" type="checkbox">Click on play</label><label class="chk"><input id="countin" type="checkbox" checked>Count-in</label>
- <label>Record quantize<select id="recq"><option value="0" selected>off</option><option value="1">1/4</option><option value="0.5">1/8</option><option value="0.25">1/16</option></select></label>
- <label class="chk"><input id="autopolish" type="checkbox" checked>Auto-polish after recording</label>
- <label>Polish grid<select id="pgrid"><option value="1">1/4</option><option value="0.5">1/8</option><option value="0.25">1/16</option></select></label>
- <label title="Time between your voice and the detected note; notes are shifted earlier by this">Latency fix<input id="lat" type="range" min="0" max="300"><span id="latv"></span></label>
-</div>
-<main>
- <section id="humview" class="card">
-  <div class="hv-top">
-   <button id="humbtn" class="humbtn"><i>🎤</i><b>Hum</b></button>
-   <div class="hv-live"><div id="hvnote" class="hvnote">—</div><div id="hvsub" class="hint">Tap Hum and sing a note</div></div>
-   <div id="hvstaff" class="hvstaff"></div>
-   <div class="hv-hold"><button id="holdbtn" class="ghost" title="Freeze the note you are humming">🔒 Hold</button><div class="nudge"><button id="hvdn" class="ghost" title="Semitone down">−</button><button id="hvup" class="ghost" title="Semitone up">+</button></div></div>
-  </div>
-  <div class="hv-row"><span class="lbl">Instrument</span><div id="hvtracks" class="pills"></div></div>
-  <div class="hv-row"><span class="lbl">Length</span><div id="hvdur" class="pills durs"></div><label class="chk"><input id="hvdot" type="checkbox">Dotted</label></div>
-  <div class="hv-row"><button id="capture" class="capture">＋ Add note to melody</button><button id="hvrest" class="ghost" title="Leave a gap">Rest</button><span class="sp"></span><button id="hvplay" class="bigplay">▶ Play</button></div>
-  <div class="scorecard">
-   <div class="row"><div class="tabs"><button id="tabstaff" class="tab on">𝄞 Staff</button><button id="tabroll" class="tab">▦ Piano roll</button></div>
-    <select id="clefsel" title="Clef"><option value="auto">Auto clef</option><option value="treble">Treble 𝄞</option><option value="bass">Bass 𝄢</option></select>
-    <span class="sp"></span><span class="zoom"><button id="zout" class="ghost">−</button><span id="zv">100%</span><button id="zin" class="ghost">+</button></span></div>
-   <div id="selbar" class="selbar"><span id="selname" class="hint">Tap a note to edit it</span><span class="sp"></span><span id="seldurs" class="pills durs sm"></span><button id="seldn" class="ghost">▼</button><button id="selup" class="ghost">▲</button><button id="seldel" class="ghost danger">🗑</button></div>
-   <div id="staffscroll" class="staffscroll"><div id="staff"></div></div>
-   <p class="hint" id="staffhint">Tap a note to select · drag it up/down to change pitch · pinch a note to change its length · pinch empty space or use −/+ to zoom · swipe to scroll</p>
-   <div id="rollhost"></div>
-  </div>
-  <div id="beathost"></div>
- </section>
- <aside id="hum" class="card">
-  <div class="tuner-top"><span id="hnote">—</span><span id="hout"></span></div>
-  <div class="tuner"><div id="needle"></div></div>
-  <div class="hrow"><span id="hfreq">— Hz</span><span id="hcents">0¢</span></div>
-  <div class="meter"><div id="lvl"></div></div>
-  <label class="chk"><input id="snap" type="checkbox" checked>Snap to key</label><label class="chk"><input id="humplay" type="checkbox" checked>Hear synth while humming</label>
-  <div class="adv advcol"><label>Noise gate<input id="gate" type="range" min="2" max="100" value="15"></label><label>Confidence<input id="conf" type="range" min="50" max="99" value="85"></label>
-   <label>Voice octave<select id="humoct"><option value="-2">-2</option><option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option><option value="2">+2</option></select></label></div>
-  <p class="hint">Keys <kbd>A</kbd>–<kbd>K</kbd> play notes · <kbd>Z</kbd>/<kbd>X</kbd> octave · <kbd>Space</kbd> play · <kbd>R</kbd> record</p>
- </aside>
- <section class="card grow">
-  <div class="beatpanel">
-   <div class="row"><h3>🥁 Beat</h3><span class="hint hide-sm">Pick a beat, press play, then hit Record — your take starts on the next bar.</span><span class="sp"></span>
-    <label>Kit<select id="beatkit"></select></label><label title="Beat volume">Vol<input id="beatvol" type="range" min="0" max="1.2" step="0.01"></label>
-    <label class="chk" title="Drum fill every 4th bar"><input id="beatfill" type="checkbox">Fills</label><button id="beatbpm" class="ghost"></button><button id="beatplay" class="bigplay">▶ Play beat</button></div>
-   <div id="beats" class="beats"></div></div>
-  <div class="arr"><div id="tracks"></div><div id="tlwrap" class="scroll"><div class="rel"><canvas id="timeline"></canvas><div class="ph"></div></div></div></div>
-  <div class="row addrow"><button id="addtrack" class="ghost">+ Instrument track</button><button id="adddrums" class="ghost adv">+ Drum track</button><span id="instcount" class="hint"></span><span class="hint hide-sm">Drag the top ruler to set a loop · click to move the playhead</span><span class="sp"></span><span id="status" class="hint"></span></div>
-  <div class="editor">
-   <div class="row"><h3 id="edtitle">Notes</h3>
-    <span id="legend" class="legend"><i class="lg-raw"></i>what you hummed <i class="lg-pol"></i>polished</span><label class="chk"><input id="showraw" type="checkbox" checked>Show before/after</label>
-    <span class="sp"></span>
-    <span class="adv tools"><label>Grid<select id="grid"><option value="1">1/4</option><option value="0.5">1/8</option><option value="0.25" selected>1/16</option></select></label><button id="quant" class="ghost">Quantize 100%</button><button id="tdn" class="ghost">−1</button><button id="tup" class="ghost">+1</button></span>
-    <button id="clear" class="ghost">Clear</button></div>
-   <div id="rollwrap"><div id="rollscroll" class="scroll roll"><div class="rollgrid"><canvas id="rlabels"></canvas><div class="rel"><canvas id="rruler"></canvas><canvas id="roll"></canvas><div class="ph"></div></div></div></div>
-    <p class="hint mouse-only">Click empty space to add · drag to move · drag the right edge to resize · right-click or double-click to delete</p><p class="hint touch-only">Tap to add or select · drag a note to move it · drag empty space to scroll · pinch a note to make it longer/shorter · pinch empty space to zoom · long-press or double-tap to delete</p></div>
-   <div id="drumwrap">
-    <p class="hint">1. Pick a groove (it previews)  2. Click the bars where it should play. Click again or right-click to remove.</p>
-    <div id="presets" class="presets"></div>
-    <div id="bars-strip" class="bars-strip"></div>
-    <div class="row"><button id="fillall" class="ghost">Use selected groove on all bars</button><button id="clearall" class="ghost">Remove all</button></div>
-    <div class="adv"><div class="row"><h3>Step editor</h3><button id="sprev" class="ghost">◀</button><span id="stepbar"></span><button id="snext" class="ghost">▶</button></div><div id="steps"></div></div>
-   </div>
-  </div>
- </section>
-</main>
-<div id="ib" class="modal"><div class="ibox"><div class="row"><h3 id="ibtitle">Instruments</h3><span class="sp"></span><button id="ibclose" class="ghost">Done</button></div>
- <input id="ibsearch" type="search" placeholder="Search 128 instruments… (e.g. guitar, flute, pad)">
- <div id="ibcats" class="ibcats"></div><div id="iblist" class="iblist"></div><p class="hint">Tap an instrument to hear it. Real sampled sounds (General MIDI) load on first use.</p></div></div>
-<footer><div class="scroll kbscroll"><div id="keyboard"></div></div></footer>
+<div id="picker" class="picker"><div class="sheet"><div class="phead"><b id="ptitle">Pick a sound</b><button id="pclose" class="chip" aria-label="Close">✕</button></div>
+ <div id="pinuse" class="pinuse"></div><div id="swap" class="swap" hidden></div>
+ <input id="search" type="search" placeholder="Search 128 sounds…"><div id="plist" class="plist"></div></div></div>
+<div id="toast" class="toast" hidden></div>
 <script type="module" src="/src/main.ts"></script>
 </body></html>
