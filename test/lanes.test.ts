@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toLanes, addNote, stretchIn, removeNote, nextSpot, songEnd, emptyLanes, freshSong } from '../src/lanes';
+import { toLanes, addNote, stretchIn, removeNote, nextSpot, songEnd, emptyLanes, freshSong, placeAt } from '../src/lanes';
 describe('lanes', () => {
   it('migrates notes into lanes by instrument', () => { const l = toLanes([{ p: 60, s: 0, d: 1, v: 1, gm: 40 }, { p: 62, s: 1, d: 1, v: 1, gm: 0 }, { p: 64, s: 2, d: 2, v: 1, gm: 40 }]);
     expect(l.map(x => x.gm)).toEqual([40, 0, 33]); expect(l[0].notes.map(n => n.p)).toEqual([60, 64]); expect(l[1].notes[0].s).toBe(1); });
@@ -12,4 +12,10 @@ describe('lanes', () => {
   it('remove closes the gap', () => { const ls = emptyLanes(); const a = addNote(ls[0], 60); const b = addNote(ls[0], 62); removeNote(ls[0], a); expect(ls[0].notes).toEqual([b]); expect(b.s).toBe(0); });
   it('freshSong is a clean default and not shared', () => { const a = freshSong(), b = freshSong(); addNote(a.lanes[0], 60);
     expect(b.lanes.map(l => [l.gm, l.notes.length])).toEqual([[0, 0], [33, 0], [73, 0]]); expect([b.bpm, b.bars, b.beat, b.active]).toEqual([100, 2, null, 0]); });
+  it('placeAt past the end leaves a rest; next hum appends after it', () => { const l = emptyLanes()[0]; addNote(l, 60); const n = placeAt(l, 64, 2, 5.4);
+    expect([n.s, n.d]).toEqual([5, 2]); expect(nextSpot(l)).toBe(7); expect(addNote(l, 62).s).toBe(7); });
+  it('placeAt onto existing notes inserts and shifts later ones right', () => { const l = emptyLanes()[0]; const a = addNote(l, 60); const b = addNote(l, 62); const c = placeAt(l, 67, 2, 1);
+    expect(c.s).toBe(1); expect(a.s).toBe(0); expect(b.s).toBe(3); expect(l.notes.map(n => n.p)).toEqual([60, 67, 62]); });
+  it('placeAt inside a long note goes after it; gaps after are kept when room', () => { const l = emptyLanes()[0]; const a = addNote(l, 60); stretchIn(l, a, 4); const z = placeAt(l, 50, 1, 8);
+    const c = placeAt(l, 67, 1, 2); expect(c.s).toBe(4); expect(z.s).toBe(8); const e = placeAt(l, 69, 2, 7); expect(e.s).toBe(7); expect(z.s).toBe(9); });
 });

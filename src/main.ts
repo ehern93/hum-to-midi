@@ -6,7 +6,7 @@ import { SCALES, freqToMidiFloat, NoteStabilizer } from './music';
 import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM } from './gm';
 import { playNote, makeStrip, Strip, encodeWav } from './audio';
 import { PRESETS, presetNotes, beatNotes, loadKit, playKit } from './drums';
-import { LANES, Lane, LNote, emptyLanes, freshSong, toLanes, songEnd, addNote, stretchIn, removeNote } from './lanes';
+import { LANES, Lane, LNote, emptyLanes, freshSong, toLanes, songEnd, addNote, stretchIn, removeNote, placeAt } from './lanes';
 
 type Note = LNote;
 interface Song { bpm: number; bars: number; lanes: Lane[]; active: number; beat: string | null; kit: string }
@@ -105,12 +105,12 @@ function renderSong() { if (sel && !S.lanes.some(l => l.notes.includes(sel!))) s
     l.notes.forEach((n, i) => { const f = hp === lo ? .5 : (hp - n.p) / (hp - lo); const top = li * RH + RH * (.1 + f * .3);
       out.push(`<div class="nb${n === sel ? ' sel' : ''}${hi.includes(n) ? ' hi' : ''}" data-l="${li}" data-i="${i}" style="left:${n.s * BW + 3}px;top:${top}%;width:${n.d * BW - 6}px;height:${RH * .5}%;background:${color(n.p)}">${nName(n.p)}<small>${n.d}</small><span class="grip" data-grip="1">⟷</span></div>`); }); });
   out.push('<div id="playhead" class="ph"' + (playing ? '' : ' hidden') + '></div>');
-  const k = $('#blocks'); k.style.width = (beats * BW + 2) + 'px'; k.innerHTML = out.join(''); $('#del').hidden = !sel; $('#hint').hidden = !!sel; }
+  const k = $('#blocks'); k.style.width = (beats * BW + 2) + 'px'; k.innerHTML = out.join(''); }
 function renderSounds() {
   const h = S.lanes.map((l, i) => `<button class="slot${i === S.active ? ' on' : ''}" data-l="${i}" style="--lc:${LCOL[i]}"><b>${i + 1}</b><span>${icon(l.gm)}</span><em>${sname(l.gm)}</em></button>`).join('');
   $('#sounds').innerHTML = h + '<button class="slot more" data-gm="more"><span>🎼</span><em>All sounds</em></button>';
   $('#labels').innerHTML = S.lanes.map((l, i) => `<button class="lab${i === S.active ? ' on' : ''}" data-l="${i}" style="--lc:${LCOL[i]}"><span>${icon(l.gm)}</span><em>${sname(l.gm)}</em></button>`).join(''); }
-function renderAll() { renderSong(); renderSounds(); }
+function renderAll() { renderSong(); renderSounds(); renderTools(); }
 
 // ---------- sound picker: sets the active lane's instrument (whole lane)
 function openPicker() { $<HTMLInputElement>('#search').value = ''; $('#picker').classList.add('open'); renderPicker(); }
@@ -149,21 +149,40 @@ async function renderWav() { const c = ac(); toast('Preparing sounds…'); await
   for (const n of drumNotes()) if (n.s < beats) playDrum(oc, ds.input, n.p, n.s * spb() + .05, n.v);
   dl(encodeWav(await oc.startRendering()), 'hum-studio.wav'); toast('Saved hum-studio.wav'); }
 
+// ---------- copy / place (long-press)
+let clip: { p: number; d: number } | null = null; let lpCtx: { l: number; beat: number; note: Note | null } | null = null;
+const fullName = (p: number) => spell(p, fifths()).name;
+function renderTools() { const c = $('#clip'); c.hidden = !clip; if (clip) $('#cliptxt').textContent = `Copied ${fullName(clip.p)} (${clip.d} beat${clip.d > 1 ? 's' : ''})`;
+  $('#del').hidden = !sel || !!clip; $('#hint').hidden = !!sel || !!clip; }
+function openLp(x: number, y: number, l: number, beat: number, note: Note | null) { lpCtx = { l, beat, note }; buzz(15);
+  const mnu = $('#lpm'); mnu.innerHTML = (clip ? `<button data-a="place">📌 Place ${fullName(clip.p)} here</button>` : '') + (note ? '<button data-a="copy">📋 Copy</button><button data-a="del" class="d">🗑 Delete</button>' : '') + '<button data-a="x" class="x">Cancel</button>';
+  if (!clip && !note) { lpCtx = null; return; } mnu.hidden = false; const r = mnu.getBoundingClientRect();
+  mnu.style.left = Math.max(8, Math.min(innerWidth - r.width - 8, x - r.width / 2)) + 'px'; mnu.style.top = Math.max(8, y - r.height - 16) + 'px'; }
+function closeLp() { $('#lpm').hidden = true; lpCtx = null; }
+$('#lpm').onclick = e => { const b = (e.target as Element).closest('[data-a]') as HTMLElement | null; if (!b || !lpCtx) return; const { l, beat, note } = lpCtx; closeLp();
+  if (b.dataset.a === 'copy' && note) { clip = { p: note.p, d: note.d }; sel = null; renderAll(); toast('Copied — long-press any spot in a lane to place it'); }
+  else if (b.dataset.a === 'del' && note) { sel = note; del(); }
+  else if (b.dataset.a === 'place' && clip) { const lane = S.lanes[l]; const n = placeAt(lane, clip.p, clip.d, beat); S.active = l; sel = null; fit(); save(); renderAll(); buzz(); loadGM(lane.gm, ac()).then(() => preview(n.p, lane.gm)); } };
+$('#clipx').onclick = () => { clip = null; renderAll(); };
+document.addEventListener('pointerdown', e => { if (!$('#lpm').hidden && !(e.target as Element).closest('#lpm')) closeLp(); }, true);
+
 // ---------- wiring
-{ const lane = $('#lane'); const pts = new Map<number, number>(); let tgt: Note | null = null, tl = 0, mode = '', x0 = 0, d0 = 1, pd0 = 0, moved = false;
-  lane.addEventListener('pointerdown', e => { const t = e.target as Element; const el = t.closest('.nb') as HTMLElement | null; pts.set(e.pointerId, e.clientX);
+{ const lane = $('#lane'); const pts = new Map<number, number>(); let lpT = 0; let tgt: Note | null = null, tl = 0, mode = '', x0 = 0, d0 = 1, pd0 = 0, moved = false;
+  lane.addEventListener('pointerdown', e => { const t = e.target as Element; const el = t.closest('.nb') as HTMLElement | null; pts.set(e.pointerId, e.clientX); clearTimeout(lpT);
     if (pts.size === 2 && sel) { mode = 'pinch'; tgt = sel; d0 = sel.d; const a = [...pts.values()]; pd0 = Math.abs(a[0] - a[1]) || 1; return; }
-    lane.setPointerCapture(e.pointerId); x0 = e.clientX; moved = false;
-    if (!el) { const r = $('#blocks').getBoundingClientRect(); tl = Math.max(0, Math.min(LANES - 1, Math.floor((e.clientY - r.top) / r.height * LANES))); tgt = null; mode = 'row'; return; }
-    tl = +el.dataset.l!; tgt = S.lanes[tl].notes[+el.dataset.i!]; d0 = tgt.d; mode = t.closest('[data-grip]') ? 'grip' : 'tap'; e.preventDefault(); });
+    if (pts.size > 1) { mode = ''; return; } lane.setPointerCapture(e.pointerId); x0 = e.clientX; moved = false;
+    const r0 = $('#blocks').getBoundingClientRect(); const cx = e.clientX, cy = e.clientY; const beat = Math.floor((cx - r0.left) / BW);
+    const arm = () => { lpT = window.setTimeout(() => { if (moved || pts.size !== 1) return; mode = 'lp'; openLp(cx, cy, tl, beat, tgt); }, 450); };
+    if (!el) { const r = $('#blocks').getBoundingClientRect(); tl = Math.max(0, Math.min(LANES - 1, Math.floor((e.clientY - r.top) / r.height * LANES))); tgt = null; mode = 'row'; arm(); return; }
+    tl = +el.dataset.l!; tgt = S.lanes[tl].notes[+el.dataset.i!]; d0 = tgt.d; mode = t.closest('[data-grip]') ? 'grip' : 'tap'; if (mode === 'tap') arm(); e.preventDefault(); });
   lane.addEventListener('pointermove', e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, e.clientX);
     if (mode === 'pinch' && tgt && pts.size === 2) { const a = [...pts.values()]; stretch(tgt, d0 * Math.abs(a[0] - a[1]) / pd0); return; }
-    if (mode === 'grip' && tgt) { moved = true; stretch(tgt, d0 + (e.clientX - x0) / BW); } else if ((mode === 'tap' || mode === 'row') && (moved || Math.abs(e.clientX - x0) > 8)) { moved = true; lane.scrollLeft -= e.clientX - x0; x0 = e.clientX; } });
-  const up = (e: PointerEvent) => { pts.delete(e.pointerId); if (pts.size) return;
+    if (mode === 'grip' && tgt) { moved = true; stretch(tgt, d0 + (e.clientX - x0) / BW); } else if ((mode === 'tap' || mode === 'row') && (moved || Math.abs(e.clientX - x0) > 8)) { moved = true; clearTimeout(lpT); lane.scrollLeft -= e.clientX - x0; x0 = e.clientX; } });
+  const up = (e: PointerEvent) => { pts.delete(e.pointerId); clearTimeout(lpT); if (pts.size) return;
     if (!moved && mode === 'row') { sel = null; if (tl !== S.active) setActive(tl); else renderAll(); }
     if (!moved && mode === 'tap' && tgt) { const n = tgt; if (tl !== S.active) { S.active = tl; save(); } sel = sel === n ? null : n; if (sel) preview(sel.p, S.lanes[tl].gm); renderAll(); }
     tgt = null; mode = ''; };
-  lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up); }
+  lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up); lane.addEventListener('contextmenu', e => e.preventDefault()); }
 $('#hum').onclick = () => toggleMic(); $('#yes').onclick = keep; $('#no').onclick = discard; $('#del').onclick = del;
 $('#sounds').onclick = e => { const b = (e.target as Element).closest('button') as HTMLElement | null; if (!b) return; if (b.dataset.gm === 'more') openPicker(); else setActive(+b.dataset.l!); };
 $('#labels').onclick = e => { const b = (e.target as Element).closest('[data-l]') as HTMLElement | null; if (!b) return; if (+b.dataset.l! === S.active) openPicker(); else setActive(+b.dataset.l!); };
@@ -174,7 +193,7 @@ $('#addbar').onclick = () => { S.bars++; save(); renderSong(); requestAnimationF
 // ---------- clear all (confirm + 5s undo)
 const OLD_KEYS = [KEY, 'hum-studio-v1', 'h2m-project-v2']; let undoSong: Song | null = null, undoT = 0;
 function clearAll() { stop(); if (micOn) toggleMic(); pending = null; lock = null; showPop(); undoSong = JSON.parse(JSON.stringify(S));
-  clearTimeout(saveT); OLD_KEYS.forEach(k => localStorage.removeItem(k)); S = freshSong() as Song; sel = null; hi = []; songKey = '';
+  clearTimeout(saveT); OLD_KEYS.forEach(k => localStorage.removeItem(k)); S = freshSong() as Song; sel = null; clip = null; closeLp(); hi = []; songKey = '';
   renderAll(); renderBeats(); renderTempo(); $('#lane').scrollLeft = 0; $('#beatpanel').hidden = true; $('#xmenu').hidden = true;
   $('#toast').hidden = true; const u = $('#undo'); u.hidden = false; clearTimeout(undoT); undoT = window.setTimeout(() => { u.hidden = true; undoSong = null; }, 5000); }
 function undoClear() { if (!undoSong) return; S = undoSong; undoSong = null; clearTimeout(undoT); $('#undo').hidden = true; songKey = ''; saveNow(); renderAll(); renderBeats(); renderTempo(); toast('Song restored'); }
@@ -192,5 +211,5 @@ $('#export').onclick = () => { const m = $('#xmenu'); m.hidden = !m.hidden; };
 $('#xwav').onclick = () => { $('#xmenu').hidden = true; renderWav(); };
 $('#xmid').onclick = async () => { $('#xmenu').hidden = true; dl(await buildMidi(), 'hum-studio.mid'); toast('Saved hum-studio.mid'); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
-(window as any).__hs = { get song() { return S; }, posBeat: () => posBeat() };
+(window as any).__hs = { get song() { return S; }, get clip() { return clip; }, posBeat: () => posBeat() };
 showPop(); renderAll(); renderBeats(); renderTempo(); syncPlay();

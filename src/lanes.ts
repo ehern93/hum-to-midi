@@ -24,3 +24,11 @@ export function stretchIn(l: Lane, n: LNote, d: number): boolean { d = Math.max(
 export function removeNote(l: Lane, n: LNote) { l.notes = l.notes.filter(x => x !== n); for (const m of l.notes) if (m.s >= n.s + n.d - 1e-6) m.s = Math.max(0, m.s - n.d); }
 /** A brand-new song: default tempo, 2 bars, no beat, empty Piano/Bass/Flute lanes. */
 export const freshSong = () => ({ bpm: 100, bars: 2, lanes: emptyLanes(), active: 0, beat: null as string | null, kit: 'studio' });
+/** Place a copy (pitch p, length d) at beat `at` (snapped to whole beats). Past the end leaves a rest;
+ *  inside a note it goes right after that note; later notes in the lane shift right just enough to fit. */
+export function placeAt(l: Lane, p: number, d: number, at: number, v = .85): LNote {
+  let s = Math.max(0, Math.round(at)); const strad = l.notes.find(m => m.s < s && m.s + m.d > s); if (strad) s = strad.s + strad.d;
+  const later = l.notes.filter(m => m.s >= s - 1e-6); const first = Math.min(Infinity, ...later.map(m => m.s));
+  const shift = later.length ? Math.max(0, s + d - first) : 0; for (const m of later) m.s += shift;
+  const n = { p, s, d, v }; l.notes.push(n); l.notes.sort((a, b) => a.s - b.s); return n;
+}

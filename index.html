@@ -23,12 +23,13 @@
   </div>
   <div id="sounds" class="sounds"></div>
  </div>
- <div class="tools"><span id="hint" class="hint">✔ adds to the highlighted lane · tap a lane to switch</span><button id="del" class="chip del" aria-label="Delete note" hidden>🗑 Delete note</button><button id="clear" class="clear" aria-label="Clear all">Clear all</button></div>
+ <div class="tools"><span id="hint" class="hint">✔ adds to the highlighted lane · tap a lane to switch</span><button id="del" class="chip del" aria-label="Delete note" hidden>🗑 Delete note</button><span id="clip" class="clipchip" hidden><span id="cliptxt"></span><button id="clipx">Cancel</button></span><button id="clear" class="clear" aria-label="Clear all">Clear all</button></div>
  <div class="song"><div id="labels" class="labels"></div><div id="lane" class="lane"><div id="blocks" class="blocks"></div></div><button id="addbar" class="chip addbar" aria-label="Add bar">＋<small>bar</small></button></div>
 </div>
 <div id="picker" class="picker"><div class="sheet"><div class="phead"><b id="ptitle">Pick a sound</b><button id="pclose" class="chip" aria-label="Close">✕</button></div>
  <div id="pinuse" class="pinuse"></div>
  <input id="search" type="search" placeholder="Search 128 sounds…"><div id="plist" class="plist"></div></div></div>
+<div id="lpm" class="lpm" hidden></div>
 <div id="toast" class="toast" hidden></div>
 <div id="undo" class="undo" hidden><span>Song cleared</span><button id="undobtn">Undo</button></div>
 <div id="confirm" class="confirm" hidden><div class="cbox"><p>Clear your whole song?</p><small>All notes, lanes, beat and tempo reset.</small><div class="crow"><button id="cno" class="chip">Cancel</button><button id="cyes" class="chip cyes">Clear</button></div></div></div>
