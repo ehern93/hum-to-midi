@@ -67,3 +67,15 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
 .nb,.lane{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .replay{width:46px;height:46px;flex:0 0 auto;background:#1e293b;border:1px solid #334155;color:#e2e8f0;display:grid;place-items:center;padding:0;margin-left:-4px}.replay:active{background:#334155}
 @media (max-width:420px){.top{gap:5px}.top h1{font-size:15px;margin:0}.top .chip{white-space:nowrap;padding-left:8px;padding-right:8px}}
+[hidden]{display:none!important}
+.ttl{display:flex;flex-direction:column;min-width:0;line-height:1.1}.ttl h1{margin:0}.sname{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
+.chip.save{background:#2563eb;color:#fff}.cyes.ok{background:#16a34a}
+.menu{position:fixed;inset:0;background:#000a;z-index:60;display:flex;justify-content:flex-end}.msheet{background:#141827;width:min(320px,86vw);height:100%;padding:14px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.mi{background:#1e2438;color:inherit;border:0;border-radius:14px;padding:14px;font-size:16px;text-align:left}.mi.d{color:#fca5a5}.credits{font-size:11px;color:var(--mut);margin-top:auto;line-height:1.4}
+.songs{position:fixed;inset:0;background:#0b0e17;z-index:55;display:flex;flex-direction:column}.shead{display:flex;align-items:center;justify-content:space-between;padding:12px;gap:8px}.shead b{font-size:18px}
+.slist{overflow:auto;padding:0 12px 20px;display:flex;flex-direction:column;gap:8px}.srow{background:#141827;border-radius:14px;padding:10px;display:flex;align-items:center;gap:8px}.srow.cur{outline:2px solid #38bdf8}
+.sopen{flex:1;min-width:0;background:none;border:0;color:inherit;text-align:left;padding:4px}.sopen b{display:block;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sopen small{color:var(--mut)}
+.srow .chip{padding:8px 10px}.cbox input{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;border-radius:12px;border:1px solid #334;background:#0b0e17;color:inherit;font-size:16px}
+.pgrp h4{margin:10px 0 4px}
+@media (max-width:420px){.top .chip{padding-left:7px;padding-right:7px;font-size:13px}}
+@media (max-width:420px){.ttl h1{display:none}.sname{font-size:15px;font-weight:700;color:inherit;max-width:30vw}.ttl{flex:1}}

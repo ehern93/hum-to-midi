@@ -6,9 +6,9 @@
 <link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg" type="image/svg+xml">
 </head><body>
 <div id="app">
- <header class="top"><button id="play" class="big play" aria-label="Play">▶</button><button id="replay" class="big replay" aria-label="Replay from start"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v5h5"/></svg></button><h1>Hum Studio</h1><span class="sp"></span>
+ <header class="top"><button id="play" class="big play" aria-label="Play">▶</button><button id="replay" class="big replay" aria-label="Replay from start"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v5h5"/></svg></button><div class="ttl"><h1>Hum Studio</h1><span id="sname" class="sname">Untitled</span></div><span class="sp"></span>
   <button id="beatbtn" class="chip">🥁 Beat</button>
-  <div class="xwrap"><button id="export" class="chip" aria-label="Export">⬇ Export</button><div id="xmenu" class="xmenu" hidden><button id="xwav">🔊 WAV audio</button><button id="xmid">🎼 MIDI file</button></div></div>
+  <button id="save" class="chip save" aria-label="Save">💾 Save</button><button id="menubtn" class="chip" aria-label="Menu">☰ Menu</button>
  </header>
  <div id="beatpanel" class="beatpanel" hidden>
   <div id="beats" class="beats"></div>
@@ -23,7 +23,7 @@
   </div>
   <div id="sounds" class="sounds"></div>
  </div>
- <div class="tools"><span id="hint" class="hint">✔ adds to the highlighted lane · tap a lane to switch</span><button id="del" class="chip del" aria-label="Delete note" hidden>🗑 Delete note</button><span id="clip" class="clipchip" hidden><span id="cliptxt"></span><button id="clipx">Cancel</button></span><button id="clear" class="clear" aria-label="Clear all">Clear all</button></div>
+ <div class="tools"><span id="hint" class="hint">✔ adds to the highlighted lane · tap a lane to switch</span><button id="del" class="chip del" aria-label="Delete note" hidden>🗑 Delete note</button><span id="clip" class="clipchip" hidden><span id="cliptxt"></span><button id="clipx">Cancel</button></span></div>
  <div class="song"><div id="labels" class="labels"></div><div id="lane" class="lane"><div id="blocks" class="blocks"></div></div><button id="addbar" class="chip addbar" aria-label="Add bar">＋<small>bar</small></button></div>
 </div>
 <div id="picker" class="picker"><div class="sheet"><div class="phead"><b id="ptitle">Pick a sound</b><button id="pclose" class="chip" aria-label="Close">✕</button></div>
@@ -31,6 +31,13 @@
  <input id="search" type="search" placeholder="Search 128 sounds…"><div id="plist" class="plist"></div></div></div>
 <div id="lpm" class="lpm" hidden></div>
 <div id="toast" class="toast" hidden></div>
+<div id="menu" class="menu" hidden><div class="msheet"><div class="phead"><b>Menu</b><button id="mclose" class="chip" aria-label="Close menu">✕</button></div>
+ <button id="mstudio" class="mi">🏠 Studio</button><button id="mlist" class="mi">📂 Song list</button><button id="msaveas" class="mi">📝 Save as…</button>
+ <button id="xwav" class="mi">🔊 Export WAV audio</button><button id="xmid" class="mi">🎼 Export MIDI file</button><button id="clear" class="mi d" aria-label="Clear all">🗑 Clear all</button>
+ <p class="credits"><b>Sounds:</b> FluidR3_GM (Frank Wen, CC BY 3.0) &amp; MusyngKite (CC BY-SA 3.0) via gleitz/midi-js-soundfonts · tonejs-instruments samples by Nicholaus Brosowsky (CC BY 3.0) · Salamander Grand Piano by Alexander Holm (CC BY 3.0) · synth voices made in-app. Sounds are served from this site; your songs are saved on this device.</p></div></div>
+<div id="songs" class="songs" hidden><div class="shead"><button id="sback" class="chip">← Studio</button><b>Your songs</b><span></span></div><div id="slist" class="slist"></div></div>
+<div id="namebox" class="confirm" hidden><div class="cbox"><p id="ntitle">Name your song</p><input id="ninput" maxlength="40" placeholder="Song name" autocomplete="off"><div class="crow"><button id="nno" class="chip">Cancel</button><button id="nyes" class="chip cyes ok">Save</button></div></div></div>
+<div id="ask" class="confirm" hidden><div class="cbox"><p id="atitle"></p><small id="asub"></small><div class="crow"><button id="ano" class="chip">Cancel</button><button id="ayes" class="chip cyes">OK</button></div></div></div>
 <div id="undo" class="undo" hidden><span>Song cleared</span><button id="undobtn">Undo</button></div>
 <div id="confirm" class="confirm" hidden><div class="cbox"><p>Clear your whole song?</p><small>All notes, lanes, beat and tempo reset.</small><div class="crow"><button id="cno" class="chip">Cancel</button><button id="cyes" class="chip cyes">Clear</button></div></div></div>
 <script type="module" src="/src/main.ts"></script>

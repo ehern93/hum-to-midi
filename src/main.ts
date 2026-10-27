@@ -3,16 +3,19 @@ import { plan } from './sched';
 import { renderStaff, keyFifths, spell, autoClef } from './score';
 import { detectPitch } from './pitch';
 import { SCALES, freqToMidiFloat, NoteStabilizer } from './music';
-import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM, hasGM } from './gm';
+import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM, hasGM, VOICES, voice, midiProgram } from './gm';
+import * as lib from './songs';
 import { playNote, makeStrip, Strip, encodeWav } from './audio';
 import { PRESETS, presetNotes, beatNotes, loadKit, playKit } from './drums';
 import { LANES, Lane, LNote, emptyLanes, freshSong, toLanes, songEnd, addNote, stretchIn, removeNote, placeAt, previewPitch } from './lanes';
 
 type Note = LNote;
-interface Song { bpm: number; bars: number; lanes: Lane[]; active: number; beat: string | null; kit: string }
+interface Song { bpm: number; bars: number; lanes: Lane[]; active: number; beat: string | null; kit: string; name?: string; sid?: string }
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
 const KEY = 'hum-studio-v2';
-const FAV = [{ gm: 0, i: '🎹', n: 'Piano' }, { gm: 24, i: '🎸', n: 'Guitar' }, { gm: 73, i: '🪈', n: 'Flute' }, { gm: 40, i: '🎻', n: 'Violin' }, { gm: 56, i: '🎺', n: 'Trumpet' }, { gm: 80, i: '🎛️', n: 'Synth' }, { gm: 14, i: '🔔', n: 'Bells' }, { gm: 33, i: '🎸', n: 'Bass' }, { gm: 65, i: '🎷', n: 'Sax' }, { gm: 11, i: '🎶', n: 'Vibes' }];
+const FAVK = 'hum-studio-favs'; const DEF_FAV = [140, 143, 128, 131, 150, 160, 170, 190];
+let favs: number[] = (() => { try { const a = JSON.parse(localStorage.getItem(FAVK) || ''); return Array.isArray(a) ? a : DEF_FAV; } catch { return DEF_FAV; } })();
+const toggleFav = (id: number) => { favs = favs.includes(id) ? favs.filter(x => x !== id) : [...favs, id]; localStorage.setItem(FAVK, JSON.stringify(favs)); };
 const TEMPOS = [{ n: 'Slow', b: 80 }, { n: 'Medium', b: 100 }, { n: 'Fast', b: 130 }];
 const GROOVES = PRESETS.filter(p => p.group === 'Grooves');
 const LCOL = ['#38bdf8', '#a78bfa', '#34d399'];
@@ -96,8 +99,8 @@ function del() { if (!sel) return; removeNote(laneOf(sel), sel); sel = null; sav
 
 // ---------- lanes
 const BW = 64; let sel: Note | null = null, songKey = '';
-const icon = (gm: number) => FAV.find(f => f.gm === gm)?.i ?? gmCat(gm).icon;
-const sname = (gm: number) => FAV.find(f => f.gm === gm)?.n ?? gmLabel(gm);
+const icon = (gm: number) => voice(gm)?.i ?? gmCat(gm).icon;
+const sname = (gm: number) => voice(gm)?.n ?? gmLabel(gm);
 function setActive(i: number) { if (i === S.active) return; S.active = i; sel = null; save(); renderAll(); loadGM(AL().gm, ac()); }
 function renderSong() { if (sel && !S.lanes.some(l => l.notes.includes(sel!))) sel = null; const beats = songBeats();
   const key = JSON.stringify([S.lanes, S.active, beats, sel && [S.lanes.indexOf(laneOf(sel)), laneOf(sel).notes.indexOf(sel)], hi.map(n => n.s + ':' + n.p)]); if (key === songKey) return; songKey = key;
@@ -121,11 +124,13 @@ function closePicker() { $('#picker').classList.remove('open'); }
 function renderPicker() { const q = $<HTMLInputElement>('#search').value.trim().toLowerCase(); const used = S.lanes.map(l => l.gm); const curG = AL().gm;
   $('#ptitle').textContent = `Sound for lane ${S.active + 1}`;
   $('#pinuse').innerHTML = '<small>Lanes — tap to choose which one to change</small>' + S.lanes.map((l, i) => `<button class="ii use${i === S.active ? ' on' : ''}" data-pl="${i}" style="--lc:${LCOL[i]}"><span>${icon(l.gm)}</span><b>${i + 1}. ${sname(l.gm)}</b></button>`).join('');
-  const fav = FAV.filter(f => !q || f.n.toLowerCase().includes(q) || gmLabel(f.gm).toLowerCase().includes(q));
-  const all = GM.map((_, p) => p).filter(p => !q || gmLabel(p).toLowerCase().includes(q) || gmCat(p).name.toLowerCase().includes(q));
-  let html = fav.length ? '<h4>Favorites</h4><div class="grid">' + fav.map(f => `<button class="ii fav${f.gm === curG ? ' on' : ''}${used.includes(f.gm) ? ' used' : ''}" data-gm="${f.gm}"><span>${f.i}</span><b>${f.n}</b></button>`).join('') + '</div>' : '';
+  const item = (p: number) => `<button class="ii${p === curG ? ' on' : ''}${used.includes(p) ? ' used' : ''}" data-gm="${p}"><span>${icon(p)}</span><b>${sname(p)}</b><i class="star${favs.includes(p) ? ' on' : ''}" data-star="${p}" aria-label="Favorite">${favs.includes(p) ? '★' : '☆'}</i></button>`;
+  const hit = (p: number) => !q || sname(p).toLowerCase().includes(q) || (voice(p)?.g ?? gmCat(p).name).toLowerCase().includes(q) || gmLabel(midiProgram(p)).toLowerCase().includes(q);
+  const fv = favs.filter(hit); let html = fv.length ? '<h4>★ Favorites</h4><div class="grid">' + fv.map(item).join('') + '</div>' : '';
+  for (const g of [...new Set(VOICES.map(v => v.g))]) { const vs = VOICES.filter(v => v.g === g && hit(v.id)); if (vs.length) html += `<h4>${vs[0].i} ${g}</h4><div class="grid">` + vs.map(v => item(v.id)).join('') + '</div>'; }
+  const all = GM.map((_, p) => p).filter(hit); if (all.length) html += '<h4 class="gmh">All 128 General MIDI sounds</h4>';
   let cat = -1; for (const p of all) { if (p >> 3 !== cat) { if (cat >= 0) html += '</div>'; cat = p >> 3; html += `<h4>${GM_CATS[cat].icon} ${GM_CATS[cat].name}</h4><div class="list">`; }
-    html += `<button class="ii${p === curG ? ' on' : ''}${used.includes(p) ? ' used' : ''}" data-gm="${p}"><span>${gmCat(p).icon}</span><b>${gmLabel(p)}</b></button>`; }
+    html += item(p); }
   if (cat >= 0) html += '</div>'; $('#plist').innerHTML = html || '<p class="hint">No sounds match.</p>'; }
 function pickSound(gm: number) { AL().gm = gm; save(); renderAll(); loadGM(gm, ac()).then(() => preview(AL().notes[0]?.p ?? 60, gm)); toast(`Lane ${S.active + 1}: ${sname(gm)}`); }
 
@@ -140,7 +145,7 @@ function renderTempo() { $<HTMLInputElement>('#bpm').value = String(S.bpm); $('#
 // ---------- export
 const dl = (blob: Blob, name: string) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
 export async function buildMidi() { const { Midi } = await import('@tonejs/midi'); const m = new Midi(); m.header.setTempo(S.bpm);
-  S.lanes.forEach((l, i) => { if (!l.notes.length) return; const mt = m.addTrack(); mt.name = `Lane ${i + 1} - ${gmLabel(l.gm)}`; mt.channel = i; mt.instrument.number = l.gm;
+  S.lanes.forEach((l, i) => { if (!l.notes.length) return; const mt = m.addTrack(); mt.name = `Lane ${i + 1} - ${sname(l.gm)}`; mt.channel = i; mt.instrument.number = midiProgram(l.gm);
     for (const n of l.notes) mt.addNote({ midi: n.p, time: n.s * spb(), duration: n.d * spb(), velocity: n.v }); });
   const dn = drumNotes(); if (dn.length) { const dt = m.addTrack(); dt.name = 'Drums'; dt.channel = 9; for (const n of dn) dt.addNote({ midi: n.p, time: n.s * spb(), duration: .25 * spb(), velocity: n.v }); }
   return new Blob([m.toArray() as BlobPart], { type: 'audio/midi' }); }
@@ -190,17 +195,17 @@ $('#hum').onclick = () => toggleMic(); $('#yes').onclick = keep; $('#no').onclic
 $('#sounds').onclick = e => { const b = (e.target as Element).closest('button') as HTMLElement | null; if (!b) return; if (b.dataset.gm === 'more') openPicker(); else setActive(+b.dataset.l!); };
 $('#labels').onclick = e => { const b = (e.target as Element).closest('[data-l]') as HTMLElement | null; if (!b) return; if (+b.dataset.l! === S.active) openPicker(); else setActive(+b.dataset.l!); };
 $('#pinuse').onclick = e => { const b = (e.target as Element).closest('[data-pl]') as HTMLElement | null; if (b) { setActive(+b.dataset.pl!); renderPicker(); } };
-$('#plist').onclick = e => { const b = (e.target as Element).closest('[data-gm]') as HTMLElement | null; if (b) { pickSound(+b.dataset.gm!); closePicker(); } };
+$('#plist').onclick = e => { const st = (e.target as Element).closest('[data-star]') as HTMLElement | null; if (st) { toggleFav(+st.dataset.star!); renderPicker(); return; } const b = (e.target as Element).closest('[data-gm]') as HTMLElement | null; if (b) { pickSound(+b.dataset.gm!); closePicker(); } };
 $('#search').oninput = renderPicker; $('#pclose').onclick = closePicker; $('#picker').onclick = e => { if (e.target === $('#picker')) closePicker(); };
 $('#addbar').onclick = () => { S.bars++; save(); renderSong(); requestAnimationFrame(() => { const l = $('#lane'); l.scrollLeft = l.scrollWidth; }); };
 // ---------- clear all (confirm + 5s undo)
 const OLD_KEYS = [KEY, 'hum-studio-v1', 'h2m-project-v2']; let undoSong: Song | null = null, undoT = 0;
 function clearAll() { stop(); if (micOn) toggleMic(); pending = null; lock = null; showPop(); undoSong = JSON.parse(JSON.stringify(S));
   clearTimeout(saveT); OLD_KEYS.forEach(k => localStorage.removeItem(k)); S = freshSong() as Song; sel = null; clip = null; closeLp(); hi = []; songKey = '';
-  renderAll(); renderBeats(); renderTempo(); $('#lane').scrollLeft = 0; $('#beatpanel').hidden = true; $('#xmenu').hidden = true;
+  renderAll(); renderBeats(); renderTempo(); $('#lane').scrollLeft = 0; $('#beatpanel').hidden = true; renderName();
   $('#toast').hidden = true; const u = $('#undo'); u.hidden = false; clearTimeout(undoT); undoT = window.setTimeout(() => { u.hidden = true; undoSong = null; }, 5000); }
-function undoClear() { if (!undoSong) return; S = undoSong; undoSong = null; clearTimeout(undoT); $('#undo').hidden = true; songKey = ''; saveNow(); renderAll(); renderBeats(); renderTempo(); toast('Song restored'); }
-$('#clear').onclick = () => { $('#confirm').hidden = false; };
+function undoClear() { if (!undoSong) return; S = undoSong; undoSong = null; clearTimeout(undoT); $('#undo').hidden = true; songKey = ''; saveNow(); renderAll(); renderName(); renderBeats(); renderTempo(); toast('Song restored'); }
+$('#clear').onclick = () => { closeMenu(); $('#confirm').hidden = false; };
 $('#cno').onclick = () => { $('#confirm').hidden = true; };
 $('#cyes').onclick = () => { $('#confirm').hidden = true; clearAll(); };
 $('#undobtn').onclick = undoClear;
@@ -211,9 +216,45 @@ $('#beats').onclick = e => { const b = (e.target as Element).closest('[data-id]'
 $('#tempos').innerHTML = TEMPOS.map(t => `<button data-b="${t.b}">${t.n}</button>`).join('');
 $('#tempos').onclick = e => { const b = (e.target as Element).closest('[data-b]') as HTMLElement | null; if (b) setBpm(+b.dataset.b!); };
 $<HTMLInputElement>('#bpm').oninput = e => setBpm(+(e.target as HTMLInputElement).value);
-$('#export').onclick = () => { const m = $('#xmenu'); m.hidden = !m.hidden; };
-$('#xwav').onclick = () => { $('#xmenu').hidden = true; renderWav(); };
-$('#xmid').onclick = async () => { $('#xmenu').hidden = true; dl(await buildMidi(), 'hum-studio.mid'); toast('Saved hum-studio.mid'); };
+$('#xwav').onclick = () => { closeMenu(); renderWav(); };
+$('#xmid').onclick = async () => { closeMenu(); dl(await buildMidi(), 'hum-studio.mid'); toast('Saved hum-studio.mid'); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
-(window as any).__hs = { get song() { return S; }, get clip() { return clip; }, pv: pvLog, posBeat: () => posBeat() };
+// ---------- save system: songs saved on this device (localStorage 'hum-studio-songs')
+const songSec = () => notesEnd() * spb();
+function renderName() { $('#sname').textContent = (S.name || 'Untitled') + (dirty() ? ' •' : ''); }
+let savedSnap = ''; const snap = () => JSON.stringify({ ...S, active: 0 });
+const dirty = () => !!S.sid && snap() !== savedSnap;
+function askName(title: string, def: string, ok: string): Promise<string | null> { return new Promise(res => {
+  $('#ntitle').textContent = title; $('#nyes').textContent = ok; const inp = $<HTMLInputElement>('#ninput'); inp.value = def; $('#namebox').hidden = false; setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  const done = (v: string | null) => { $('#namebox').hidden = true; $('#nyes').onclick = $('#nno').onclick = null; inp.onkeydown = null; res(v); };
+  $('#nyes').onclick = () => { const v = inp.value.trim(); if (v) done(v); else inp.focus(); }; $('#nno').onclick = () => done(null);
+  inp.onkeydown = e => { if (e.key === 'Enter') ($('#nyes') as HTMLButtonElement).click(); }; }); }
+function askYes(title: string, sub: string, ok: string): Promise<boolean> { return new Promise(res => { $('#atitle').textContent = title; $('#asub').textContent = sub; $('#ayes').textContent = ok; $('#ask').hidden = false;
+  const done = (v: boolean) => { $('#ask').hidden = true; res(v); }; $('#ayes').onclick = () => done(true); $('#ano').onclick = () => done(false); }); }
+function storeAs(name: string, id?: string) { S.name = name; const d = { ...S }; delete d.sid; S.sid = lib.saveSong(localStorage, { id, name, beats: notesEnd(), data: { ...d, bpm: S.bpm } }); savedSnap = snap(); localStorage.setItem('hum-studio-snap', savedSnap); saveNow(); renderName(); }
+async function doSave() { if (!S.name || !S.sid) { const n = await askName('Name your song', lib.uniqueName(localStorage, S.name || 'My song'), 'Save'); if (!n) return; storeAs(n); }
+  else storeAs(S.name, S.sid); toast(`Saved “${S.name}”`); buzz(); }
+async function doSaveAs() { closeMenu(); const n = await askName('Save a copy as…', lib.uniqueName(localStorage, (S.name || 'My song') + ' copy'), 'Save copy'); if (!n) return; storeAs(n); toast(`Saved copy “${n}”`); }
+function openSong(id: string) { const s = lib.getSong(localStorage, id); if (!s) return; stop(); S = { ...JSON.parse(JSON.stringify(s.data)), name: s.name, sid: s.id, active: 0 }; savedSnap = snap(); localStorage.setItem('hum-studio-snap', savedSnap);
+  sel = null; clip = null; hi = []; songKey = ''; saveNow(); renderAll(); renderBeats(); renderTempo(); renderName(); $('#lane').scrollLeft = 0; showStudio(); toast(`Opened “${s.name}”`); }
+function renderList() { const a = lib.sorted(localStorage); const d = (t: number) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  $('#slist').innerHTML = a.length ? a.map(s => `<div class="srow${s.id === S.sid ? ' cur' : ''}" data-id="${s.id}"><button class="sopen" data-a="open"><b>${esc(s.name)}</b><small>${d(s.at)} · ${lib.fmtLen(s.beats * 60 / (s.data?.bpm || 100))}</small></button><button class="chip" data-a="ren" aria-label="Rename">✏️</button><button class="chip" data-a="dup" aria-label="Duplicate">⧉</button><button class="chip" data-a="del" aria-label="Delete">🗑</button></div>`).join('')
+    : '<p class="hint">No saved songs yet — tap 💾 Save in the Studio.</p>'; }
+const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+function showList() { closeMenu(); renderList(); $('#songs').hidden = false; }
+function showStudio() { closeMenu(); $('#songs').hidden = true; }
+function closeMenu() { $('#menu').hidden = true; }
+$('#slist').onclick = async e => { const b = (e.target as Element).closest('[data-a]') as HTMLElement | null; if (!b) return; const id = (b.closest('[data-id]') as HTMLElement).dataset.id!; const s = lib.getSong(localStorage, id); if (!s) return;
+  if (b.dataset.a === 'open') openSong(id);
+  else if (b.dataset.a === 'ren') { const n = await askName('Rename song', s.name, 'Rename'); if (n && lib.renameSong(localStorage, id, n)) { if (S.sid === id) { S.name = n; saveNow(); renderName(); } renderList(); } }
+  else if (b.dataset.a === 'dup') { lib.duplicateSong(localStorage, id); renderList(); toast('Duplicated'); }
+  else if (b.dataset.a === 'del') { if (await askYes(`Delete “${s.name}”?`, 'This can’t be undone.', 'Delete')) { lib.deleteSong(localStorage, id); if (S.sid === id) { delete S.sid; saveNow(); renderName(); } renderList(); toast('Deleted'); } } };
+{ const sv = $('#save'); let t = 0, long = false; sv.addEventListener('pointerdown', () => { long = false; t = window.setTimeout(() => { long = true; buzz(15); doSaveAs(); }, 550); });
+  const end = () => clearTimeout(t); sv.addEventListener('pointerup', end); sv.addEventListener('pointerleave', end); sv.addEventListener('pointercancel', end); sv.addEventListener('contextmenu', e => e.preventDefault());
+  sv.onclick = () => { if (long) { long = false; return; } doSave(); }; }
+$('#menubtn').onclick = () => { $('#menu').hidden = false; }; $('#mclose').onclick = closeMenu; $('#menu').onclick = e => { if (e.target === $('#menu')) closeMenu(); };
+$('#mstudio').onclick = showStudio; $('#mlist').onclick = showList; $('#msaveas').onclick = doSaveAs; $('#sback').onclick = showStudio;
+{ if (S.sid) { if (!lib.getSong(localStorage, S.sid)) delete S.sid; else savedSnap = localStorage.getItem('hum-studio-snap') || ''; } setInterval(renderName, 1500); renderName(); }
+(window as any).__hs = { get song() { return S; }, ids: () => [...VOICES.map(v => v.id), ...GM.map((_, p) => p)],
+  rms: async (id: number, note = 60) => { const ok = await loadGM(id, ac()); const oc = new OfflineAudioContext(1, 44100 * 1.2, 44100); const used = playGM(oc, oc.destination, id, note, 0.01, .8, .9); const d = (await oc.startRendering()).getChannelData(0); let s = 0; for (const x of d) s += x * x; return { ok, used, rms: Math.sqrt(s / d.length) }; }, get clip() { return clip; }, pv: pvLog, posBeat: () => posBeat() };
 showPop(); renderAll(); renderBeats(); renderTempo(); syncPlay();

@@ -1,6 +1,6 @@
 // Three instrument lanes; each lane has one instrument and its own sequential notes.
 export const LANES = 3;
-export const DEFAULT_GM = [0, 33, 73];
+export const DEFAULT_GM = [140, 128, 190];
 export interface LNote { p: number; s: number; d: number; v: number }
 export interface Lane { gm: number; notes: LNote[] }
 export const emptyLanes = (): Lane[] => DEFAULT_GM.map(gm => ({ gm, notes: [] }));
