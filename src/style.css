@@ -65,3 +65,5 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
 .lpm{position:fixed;z-index:65;display:flex;flex-direction:column;background:#1b1f2c;border:1px solid #374151;border-radius:14px;padding:5px;box-shadow:0 10px 28px #000c;min-width:170px}
 .lpm button{border:0;background:none;text-align:left;padding:12px 14px;border-radius:10px;font-size:16px}.lpm button:active{background:#2a2f40}.lpm .d{color:#fca5a5}.lpm .x{color:var(--mut)}
 .nb,.lane{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.replay{width:46px;height:46px;flex:0 0 auto;background:#1e293b;border:1px solid #334155;color:#e2e8f0;display:grid;place-items:center;padding:0;margin-left:-4px}.replay:active{background:#334155}
+@media (max-width:420px){.top{gap:5px}.top h1{font-size:15px;margin:0}.top .chip{white-space:nowrap;padding-left:8px;padding-right:8px}}

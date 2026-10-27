@@ -202,6 +202,7 @@ $('#cno').onclick = () => { $('#confirm').hidden = true; };
 $('#cyes').onclick = () => { $('#confirm').hidden = true; clearAll(); };
 $('#undobtn').onclick = undoClear;
 $('#play').onclick = () => playing ? stop() : play();
+$('#replay').onclick = () => { $('#lane').scrollTo({ left: 0, behavior: 'smooth' }); play(); };
 $('#beatbtn').onclick = () => { const k = $('#beatpanel'); k.hidden = !k.hidden; };
 $('#beats').onclick = e => { const b = (e.target as Element).closest('[data-id]') as HTMLElement | null; if (b) pickBeat(b.dataset.id || null); };
 $('#tempos').innerHTML = TEMPOS.map(t => `<button data-b="${t.b}">${t.n}</button>`).join('');
