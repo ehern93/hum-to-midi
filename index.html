@@ -14,17 +14,20 @@
   <div id="beats" class="beats"></div>
   <div class="tempo"><div id="tempos" class="tempos"></div><input id="bpm" type="range" min="60" max="160" step="1" aria-label="Tempo"><span id="bpmv"></span></div>
  </div>
- <div class="center">
-  <button id="hum" class="hum" aria-label="Hum"><span>🎤</span></button><div id="humlbl" class="humlbl">Tap to hum</div>
-  <div id="pop" class="pop" hidden><div id="pnote" class="pnote">C</div><div id="pstaff" class="pstaff"></div></div>
-  <div class="yn"><button id="no" class="big no" aria-label="Discard">✖</button><button id="yes" class="big yes" aria-label="Keep">✔</button></div>
+ <div class="deck">
+  <div class="humcol">
+   <div class="microw"><button id="hum" class="hum" aria-label="Hum"><span>🎤</span></button>
+    <div id="pop" class="pop" hidden><div id="pnote" class="pnote">C</div><div id="pstaff" class="pstaff"></div></div></div>
+   <div id="humlbl" class="humlbl">Tap to hum</div>
+   <div class="yn"><button id="no" class="big no" aria-label="Discard">✖</button><button id="yes" class="big yes" aria-label="Keep">✔</button></div>
+  </div>
+  <div id="sounds" class="sounds"></div>
  </div>
- <div class="soundbar"><div id="scount" class="scount"></div><div id="sounds" class="sounds"></div></div>
- <div id="tools" class="tools" hidden><button id="tsound" class="chip tsound"></button><button id="del" class="chip del" aria-label="Delete note">🗑</button></div>
- <div class="song"><div id="lane" class="lane"><div id="blocks" class="blocks"></div></div><button id="addbar" class="chip addbar" aria-label="Add bar">＋<small>bar</small></button></div>
+ <div class="tools"><span id="hint" class="hint">✔ adds to the highlighted lane · tap a lane to switch</span><button id="del" class="chip del" aria-label="Delete note" hidden>🗑 Delete note</button></div>
+ <div class="song"><div id="labels" class="labels"></div><div id="lane" class="lane"><div id="blocks" class="blocks"></div></div><button id="addbar" class="chip addbar" aria-label="Add bar">＋<small>bar</small></button></div>
 </div>
 <div id="picker" class="picker"><div class="sheet"><div class="phead"><b id="ptitle">Pick a sound</b><button id="pclose" class="chip" aria-label="Close">✕</button></div>
- <div id="pinuse" class="pinuse"></div><div id="swap" class="swap" hidden></div>
+ <div id="pinuse" class="pinuse"></div>
  <input id="search" type="search" placeholder="Search 128 sounds…"><div id="plist" class="plist"></div></div></div>
 <div id="toast" class="toast" hidden></div>
 <script type="module" src="/src/main.ts"></script>

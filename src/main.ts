@@ -1,31 +1,34 @@
 import './style.css';
 import { plan } from './sched';
-import { splitByInstrument } from './group';
 import { renderStaff, keyFifths, spell, autoClef } from './score';
 import { detectPitch } from './pitch';
 import { SCALES, freqToMidiFloat, NoteStabilizer } from './music';
 import { GM, GM_CATS, gmCat, gmLabel, loadGM, playGM } from './gm';
 import { playNote, makeStrip, Strip, encodeWav } from './audio';
 import { PRESETS, presetNotes, beatNotes, loadKit, playKit } from './drums';
-import { MAX_SOUNDS, soundsInUse, pickExceeds, swapSound } from './limit';
+import { LANES, Lane, LNote, emptyLanes, toLanes, songEnd, addNote, stretchIn, removeNote } from './lanes';
 
-interface Note { p: number; s: number; d: number; v: number; gm: number }
-interface Song { bpm: number; bars: number; notes: Note[]; beat: string | null; kit: string; brush: number }
+type Note = LNote;
+interface Song { bpm: number; bars: number; lanes: Lane[]; active: number; beat: string | null; kit: string }
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
-const KEY = 'hum-studio-v1';
+const KEY = 'hum-studio-v2';
 const FAV = [{ gm: 0, i: '🎹', n: 'Piano' }, { gm: 24, i: '🎸', n: 'Guitar' }, { gm: 73, i: '🪈', n: 'Flute' }, { gm: 40, i: '🎻', n: 'Violin' }, { gm: 56, i: '🎺', n: 'Trumpet' }, { gm: 80, i: '🎛️', n: 'Synth' }, { gm: 14, i: '🔔', n: 'Bells' }, { gm: 33, i: '🎸', n: 'Bass' }, { gm: 65, i: '🎷', n: 'Sax' }, { gm: 11, i: '🎶', n: 'Vibes' }];
 const TEMPOS = [{ n: 'Slow', b: 80 }, { n: 'Medium', b: 100 }, { n: 'Fast', b: 130 }];
 const GROOVES = PRESETS.filter(p => p.group === 'Grooves');
+const LCOL = ['#38bdf8', '#a78bfa', '#34d399'];
 
-function migrate(): Song | null { try { const p = JSON.parse(localStorage.getItem('h2m-project-v2') || ''); const t = p.tracks.find((x: any) => x.inst !== 'drums');
-  return { bpm: p.bpm || 100, bars: p.bars || 2, notes: (t?.notes || []).map((n: any) => ({ p: n.p, s: n.s, d: n.d, v: n.v ?? .85, gm: n.gm ?? t.gm ?? 0 })), beat: p.beat?.id ?? null, kit: p.beat?.kit || 'studio', brush: 0 }; } catch { return null; } }
-function load(): Song { try { const s = JSON.parse(localStorage.getItem(KEY) || ''); if (s && Array.isArray(s.notes)) return s; } catch { /* */ } return migrate() || { bpm: 100, bars: 2, notes: [], beat: null, kit: 'studio', brush: 0 }; }
+function migrate(): Song | null {
+  try { const v1 = JSON.parse(localStorage.getItem('hum-studio-v1') || ''); if (v1 && Array.isArray(v1.notes)) return { bpm: v1.bpm || 100, bars: v1.bars || 2, lanes: toLanes(v1.notes, v1.brush), active: 0, beat: v1.beat ?? null, kit: v1.kit || 'studio' }; } catch { /* */ }
+  try { const p = JSON.parse(localStorage.getItem('h2m-project-v2') || ''); const t = p.tracks.find((x: any) => x.inst !== 'drums');
+    return { bpm: p.bpm || 100, bars: p.bars || 2, lanes: toLanes((t?.notes || []).map((n: any) => ({ p: n.p, s: n.s, d: n.d, v: n.v ?? .85, gm: n.gm ?? t.gm ?? 0 }))), active: 0, beat: p.beat?.id ?? null, kit: p.beat?.kit || 'studio' }; } catch { return null; } }
+function load(): Song { try { const s = JSON.parse(localStorage.getItem(KEY) || ''); if (s && Array.isArray(s.lanes) && s.lanes.length === LANES) return s; } catch { /* */ } return migrate() || { bpm: 100, bars: 2, lanes: emptyLanes(), active: 0, beat: null, kit: 'studio' }; }
 let S = load();
 let saveT = 0; const save = () => { clearTimeout(saveT); saveT = window.setTimeout(saveNow, 400); };
 const saveNow = () => { clearTimeout(saveT); localStorage.setItem(KEY, JSON.stringify(S)); };
 addEventListener('pagehide', saveNow); document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
 const buzz = (ms = 8) => { try { navigator.vibrate?.(ms); } catch { /* */ } };
 const toast = (s: string) => { const t = $('#toast'); t.textContent = s; t.hidden = false; clearTimeout((t as any)._t); (t as any)._t = setTimeout(() => t.hidden = true, 2500); };
+const AL = () => S.lanes[S.active];
 
 // ---------- audio
 let ctx: AudioContext | null = null; let mel: Strip, drm: Strip, master: GainNode;
@@ -34,7 +37,7 @@ function ac() { if (!ctx) { ctx = new AudioContext({ latencyHint: 'interactive' 
 const spb = () => 60 / S.bpm;
 function playMel(c: BaseAudioContext, out: AudioNode, n: { p: number; gm: number; v: number }, t: number, dur: number) { if (!playGM(c, out, n.gm, n.p, t, dur, n.v)) playNote(c, out, 'piano', n.p, t, dur, n.v); }
 function playDrum(c: BaseAudioContext, out: AudioNode, m: number, t: number, v: number) { if (!playKit(c, out, S.kit, m, t, v)) playNote(c, out, 'drums', m, t, .1, v); }
-const notesEnd = () => Math.max(0, ...S.notes.map(n => n.s + n.d));
+const notesEnd = () => songEnd(S.lanes);
 const songBeats = () => Math.max(S.bars * 4, Math.ceil(notesEnd() / 4) * 4);
 let drumCache = { k: '', n: [] as { p: number; s: number; v: number }[] };
 function drumNotes() { const k = S.beat + ':' + S.bars; if (drumCache.k !== k) { const pr = PRESETS.find(p => p.id === S.beat); drumCache = { k, n: pr ? beatNotes(pr, S.bars, true).notes : [] }; } return drumCache.n; }
@@ -42,19 +45,20 @@ function drumNotes() { const k = S.beat + ':' + S.bars; if (drumCache.k !== k) {
 // ---------- transport
 let playing = false, startCtxTime = 0, startBeat = 0, schedBeat = 0, timer = 0;
 const posBeat = () => playing && ctx ? startBeat + (ctx.currentTime - startCtxTime) / spb() : 0;
-function play() { const c = ac(); stop(); playing = true; startBeat = 0; schedBeat = 0; startCtxTime = c.currentTime + .05; timer = window.setInterval(schedule, 25); schedule(); requestAnimationFrame(anim); syncPlay(); }
-function stop() { if (!playing) return; playing = false; clearInterval(timer); hi = null; renderSong(); syncPlay(); }
+function play() { const c = ac(); stop(); S.lanes.forEach(l => loadGM(l.gm, c)); playing = true; startBeat = 0; schedBeat = 0; startCtxTime = c.currentTime + .05; timer = window.setInterval(schedule, 25); schedule(); requestAnimationFrame(anim); syncPlay(); }
+function stop() { if (!playing) return; playing = false; clearInterval(timer); hi = []; renderSong(); syncPlay(); }
 function schedule() { if (!ctx) return; const now = ctx.currentTime;
   const r = plan({ schedBeat, startBeat, startCtxTime }, now, spb(), { on: false, s: 0, e: 0 }); ({ schedBeat, startBeat, startCtxTime } = r.clock);
   for (const g of r.segs) { const tt = (b: number) => Math.max(now, g.t0 + (b - g.b0) * spb());
-    for (const n of S.notes) if (n.s >= g.from && n.s < g.to) playMel(ctx, mel.input, n, tt(n.s), n.d * spb());
+    for (const l of S.lanes) for (const n of l.notes) if (n.s >= g.from && n.s < g.to) playMel(ctx, mel.input, { ...n, gm: l.gm }, tt(n.s), n.d * spb());
     for (const n of drumNotes()) if (n.s >= g.from && n.s < g.to) playDrum(ctx, drm.input, n.p, tt(n.s), n.v); }
   if (posBeat() > songBeats()) stop(); }
 function setBpm(b: number) { b = Math.max(60, Math.min(160, Math.round(b))); if (playing && ctx) { const pb = posBeat(); startBeat = pb; startCtxTime = ctx.currentTime; schedBeat = Math.max(schedBeat, pb); } S.bpm = b; save(); renderTempo(); }
-let hi: Note | null = null;
-function anim() { if (!playing) return; requestAnimationFrame(anim); const b = posBeat(); const n = S.notes.find(x => b >= x.s && b < x.s + x.d) || null;
-  const ph = $('#playhead'); ph.style.transform = `translateX(${b * BW}px)`;
-  if (n !== hi) { hi = n; renderSong(); if (n) { const l = $('#lane'); const x = n.s * BW; if (x > l.scrollLeft + l.clientWidth - 80 || x < l.scrollLeft) l.scrollLeft = Math.max(0, x - 40); } } }
+let hi: Note[] = [];
+function anim() { if (!playing) return; requestAnimationFrame(anim); const b = posBeat(); const h = S.lanes.flatMap(l => l.notes.filter(x => b >= x.s && b < x.s + x.d));
+  $('#playhead').style.transform = `translateX(${b * BW}px)`;
+  const l = $('#lane'); const x = b * BW; if (x > l.scrollLeft + l.clientWidth - 60 || x < l.scrollLeft) l.scrollLeft = Math.max(0, x - 40);
+  if (h.length !== hi.length || h.some((n, i) => n !== hi[i])) { hi = h; renderSong(); } }
 function syncPlay() { const p = $('#play'); p.textContent = playing ? '■' : '▶'; p.classList.toggle('on', playing); p.setAttribute('aria-label', playing ? 'Stop' : 'Play'); $('#playhead').hidden = !playing; }
 
 // ---------- hum
@@ -76,49 +80,51 @@ const nName = (p: number) => spell(p, fifths()).name.replace(/-?\d+$/, '');
 const color = (p: number, l = 65) => `hsl(${(((p % 12) + 12) % 12) * 30},85%,${l}%)`;
 function showPop() { const has = pending !== null; $('#pop').hidden = !has; $<HTMLButtonElement>('#yes').disabled = !has; $<HTMLButtonElement>('#no').disabled = !has; if (!has) return;
   const p = pending!; $('#pnote').textContent = nName(p); $('#pnote').style.color = color(p, 38); $('#pop').style.background = color(p, 92);
-  $('#pstaff').innerHTML = renderStaff([{ p, s: 0, d: 1, id: 0 }], { clef: autoClef([p]), fifths: fifths(), beatW: 40, beats: 1, single: true, height: 150, color: '#222' }).svg; }
-function keep() { if (pending === null) return; const n: Note = { p: pending, s: Math.ceil(notesEnd() - 1e-6), d: 1, v: .85, gm: S.brush }; S.notes.push(n); fit();
-  loadGM(S.brush, ac()).then(() => preview(n)); lock = pending; pending = null; sel = null; showPop(); buzz(); save(); renderAll(); requestAnimationFrame(() => { const l = $('#lane'); l.scrollLeft = l.scrollWidth; }); }
+  $('#pstaff').innerHTML = renderStaff([{ p, s: 0, d: 1, id: 0 }], { clef: autoClef([p]), fifths: fifths(), beatW: 30, beats: 1, single: true, height: 96, color: '#222' }).svg; }
+function keep() { if (pending === null) return; const lane = AL(); const n = addNote(lane, pending); fit();
+  loadGM(lane.gm, ac()).then(() => preview(n.p, lane.gm)); lock = pending; pending = null; sel = null; showPop(); buzz(); save(); renderAll();
+  requestAnimationFrame(() => { const l = $('#lane'); const x = (n.s + n.d) * BW; if (x > l.scrollLeft + l.clientWidth - 20) l.scrollLeft = x - l.clientWidth + 80; }); }
 function discard() { lock = pending; pending = null; showPop(); }
-function preview(n: { p: number; gm: number }) { const c = ac(); playMel(c, mel.input, { ...n, v: .8 }, c.currentTime, .45); }
+function preview(p: number, gm: number) { const c = ac(); playMel(c, mel.input, { p, gm, v: .8 }, c.currentTime, .45); }
 function fit() { const need = Math.ceil(notesEnd() / 4); if (need > S.bars) S.bars = need; }
-function shiftAfter(from: number, by: number, except?: Note) { for (const n of S.notes) if (n !== except && n.s >= from - 1e-6) n.s = Math.max(0, n.s + by); }
-function stretch(n: Note, d: number) { d = Math.max(1, Math.min(4, Math.round(d))); if (d === n.d) return; shiftAfter(n.s + n.d, d - n.d, n); n.d = d; fit(); buzz(); save(); renderSong(); }
-function del() { if (!sel) return; const n = sel; S.notes = S.notes.filter(x => x !== n); shiftAfter(n.s + n.d, -n.d); sel = null; save(); renderAll(); }
+const laneOf = (n: Note) => S.lanes.find(l => l.notes.includes(n))!;
+function stretch(n: Note, d: number) { if (!stretchIn(laneOf(n), n, d)) return; fit(); buzz(); save(); renderSong(); }
+function del() { if (!sel) return; removeNote(laneOf(sel), sel); sel = null; save(); renderAll(); }
 
-// ---------- song lane
+// ---------- lanes
 const BW = 64; let sel: Note | null = null, songKey = '';
 const icon = (gm: number) => FAV.find(f => f.gm === gm)?.i ?? gmCat(gm).icon;
 const sname = (gm: number) => FAV.find(f => f.gm === gm)?.n ?? gmLabel(gm);
-function renderSong() { if (sel && !S.notes.includes(sel)) sel = null; const beats = songBeats(); const ps = S.notes.map(n => n.p); const lo = Math.min(...ps, 60), hiP = Math.max(...ps, 72); const H = 170, BH = 46;
-  const key = JSON.stringify([S.notes, beats, sel && S.notes.indexOf(sel), hi && S.notes.indexOf(hi)]); if (key === songKey) return; songKey = key;
-  const out: string[] = []; for (let b = 0; b <= beats; b++) out.push(`<div class="bl${b % 4 === 0 ? ' bar' : ''}" style="left:${b * BW}px"></div>` + (b % 4 === 0 && b < beats ? `<span class="bno" style="left:${b * BW + 6}px">${b / 4 + 1}</span>` : ''));
-  S.notes.forEach((n, i) => { const y = 22 + (hiP === lo ? .5 : (hiP - n.p) / (hiP - lo)) * (H - BH - 28);
-    out.push(`<div class="nb${n === sel ? ' sel' : ''}${n === hi ? ' hi' : ''}" data-i="${i}" style="left:${n.s * BW + 3}px;top:${y}px;width:${n.d * BW - 6}px;height:${BH}px;background:${color(n.p)}"><span class="ic">${icon(n.gm)}</span>${nName(n.p)}<small>${n.d}</small><span class="grip" data-grip="1">⟷</span></div>`); });
+function setActive(i: number) { if (i === S.active) return; S.active = i; sel = null; save(); renderAll(); loadGM(AL().gm, ac()); }
+function renderSong() { if (sel && !S.lanes.some(l => l.notes.includes(sel!))) sel = null; const beats = songBeats();
+  const key = JSON.stringify([S.lanes, S.active, beats, sel && [S.lanes.indexOf(laneOf(sel)), laneOf(sel).notes.indexOf(sel)], hi.map(n => n.s + ':' + n.p)]); if (key === songKey) return; songKey = key;
+  const out: string[] = []; const RH = 100 / LANES;
+  S.lanes.forEach((l, li) => out.push(`<div class="row${li === S.active ? ' act' : ''}" data-l="${li}" style="top:${li * RH}%;height:${RH}%;--lc:${LCOL[li]}"></div>`));
+  for (let b = 0; b <= beats; b++) out.push(`<div class="bl${b % 4 === 0 ? ' bar' : ''}" style="left:${b * BW}px"></div>` + (b % 4 === 0 && b < beats ? `<span class="bno" style="left:${b * BW + 5}px">${b / 4 + 1}</span>` : ''));
+  S.lanes.forEach((l, li) => { const ps = l.notes.map(n => n.p); const lo = Math.min(...ps), hp = Math.max(...ps);
+    l.notes.forEach((n, i) => { const f = hp === lo ? .5 : (hp - n.p) / (hp - lo); const top = li * RH + RH * (.1 + f * .3);
+      out.push(`<div class="nb${n === sel ? ' sel' : ''}${hi.includes(n) ? ' hi' : ''}" data-l="${li}" data-i="${i}" style="left:${n.s * BW + 3}px;top:${top}%;width:${n.d * BW - 6}px;height:${RH * .5}%;background:${color(n.p)}">${nName(n.p)}<small>${n.d}</small><span class="grip" data-grip="1">⟷</span></div>`); }); });
   out.push('<div id="playhead" class="ph"' + (playing ? '' : ' hidden') + '></div>');
-  const k = $('#blocks'); k.style.width = (beats * BW + 2) + 'px'; k.innerHTML = out.join(''); $('#tools').hidden = !sel; if (sel) $('#tsound').innerHTML = `${icon(sel.gm)} ${sname(sel.gm)} <b>▾</b>`; }
-function renderSounds() { const used = soundsInUse(S.notes, S.brush);
-  $('#sounds').innerHTML = used.map(g => `<button class="slot${g === (sel ? sel.gm : S.brush) ? ' on' : ''}" data-gm="${g}"><span>${icon(g)}</span>${sname(g)}</button>`).join('') + Array.from({ length: MAX_SOUNDS - used.length }, () => '<button class="slot empty" data-gm="more"><span>＋</span>free</button>').join('') + '<button class="slot more" data-gm="more"><span>🎼</span>All sounds</button>';
-  $('#scount').textContent = `${used.length}/${MAX_SOUNDS} sounds in your song`; }
+  const k = $('#blocks'); k.style.width = (beats * BW + 2) + 'px'; k.innerHTML = out.join(''); $('#del').hidden = !sel; $('#hint').hidden = !!sel; }
+function renderSounds() {
+  const h = S.lanes.map((l, i) => `<button class="slot${i === S.active ? ' on' : ''}" data-l="${i}" style="--lc:${LCOL[i]}"><b>${i + 1}</b><span>${icon(l.gm)}</span><em>${sname(l.gm)}</em></button>`).join('');
+  $('#sounds').innerHTML = h + '<button class="slot more" data-gm="more"><span>🎼</span><em>All sounds</em></button>';
+  $('#labels').innerHTML = S.lanes.map((l, i) => `<button class="lab${i === S.active ? ' on' : ''}" data-l="${i}" style="--lc:${LCOL[i]}"><span>${icon(l.gm)}</span><em>${sname(l.gm)}</em></button>`).join(''); }
 function renderAll() { renderSong(); renderSounds(); }
 
-// ---------- sound picker (curated favorites first, then all 128 GM)
-let pickFor: Note | null = null, swapGm: number | null = null;
-function openPicker(target: Note | null) { pickFor = target; swapGm = null; $<HTMLInputElement>('#search').value = ''; $('#picker').classList.add('open'); renderPicker(); }
-function closePicker() { $('#picker').classList.remove('open'); swapGm = null; }
-function renderPicker() { const q = $<HTMLInputElement>('#search').value.trim().toLowerCase(); const used = soundsInUse(S.notes, S.brush); const curG = pickFor ? pickFor.gm : S.brush;
-  $('#ptitle').textContent = pickFor ? `Sound for this ${nName(pickFor.p)} note` : 'Pick a sound';
-  $('#pinuse').innerHTML = `<small>In your song (${used.length}/${MAX_SOUNDS})</small>` + used.map(g => `<button class="ii use${g === curG ? ' on' : ''}" data-gm="${g}"><span>${icon(g)}</span><b>${sname(g)}</b></button>`).join('');
-  const sw = $('#swap'); sw.hidden = swapGm === null;
-  if (swapGm !== null) sw.innerHTML = `<p>Your song can use ${MAX_SOUNDS} sounds at a time. Swap one for <b>${icon(swapGm)} ${sname(swapGm)}</b>? Its notes will switch over.</p><div class="row">${used.map(g => `<button class="swapbtn" data-out="${g}">${icon(g)} ${sname(g)} → ${icon(swapGm!)}</button>`).join('')}<button class="swapbtn cancel" data-out="x">Keep as is</button></div>`;
+// ---------- sound picker: sets the active lane's instrument (whole lane)
+function openPicker() { $<HTMLInputElement>('#search').value = ''; $('#picker').classList.add('open'); renderPicker(); }
+function closePicker() { $('#picker').classList.remove('open'); }
+function renderPicker() { const q = $<HTMLInputElement>('#search').value.trim().toLowerCase(); const used = S.lanes.map(l => l.gm); const curG = AL().gm;
+  $('#ptitle').textContent = `Sound for lane ${S.active + 1}`;
+  $('#pinuse').innerHTML = '<small>Lanes — tap to choose which one to change</small>' + S.lanes.map((l, i) => `<button class="ii use${i === S.active ? ' on' : ''}" data-pl="${i}" style="--lc:${LCOL[i]}"><span>${icon(l.gm)}</span><b>${i + 1}. ${sname(l.gm)}</b></button>`).join('');
   const fav = FAV.filter(f => !q || f.n.toLowerCase().includes(q) || gmLabel(f.gm).toLowerCase().includes(q));
   const all = GM.map((_, p) => p).filter(p => !q || gmLabel(p).toLowerCase().includes(q) || gmCat(p).name.toLowerCase().includes(q));
   let html = fav.length ? '<h4>Favorites</h4><div class="grid">' + fav.map(f => `<button class="ii fav${f.gm === curG ? ' on' : ''}${used.includes(f.gm) ? ' used' : ''}" data-gm="${f.gm}"><span>${f.i}</span><b>${f.n}</b></button>`).join('') + '</div>' : '';
   let cat = -1; for (const p of all) { if (p >> 3 !== cat) { if (cat >= 0) html += '</div>'; cat = p >> 3; html += `<h4>${GM_CATS[cat].icon} ${GM_CATS[cat].name}</h4><div class="list">`; }
     html += `<button class="ii${p === curG ? ' on' : ''}${used.includes(p) ? ' used' : ''}" data-gm="${p}"><span>${gmCat(p).icon}</span><b>${gmLabel(p)}</b></button>`; }
   if (cat >= 0) html += '</div>'; $('#plist').innerHTML = html || '<p class="hint">No sounds match.</p>'; }
-function applyPick(gm: number) { if (pickFor) pickFor.gm = gm; S.brush = gm; save(); renderAll(); loadGM(gm, ac()).then(() => preview({ p: pickFor?.p ?? 60, gm })); }
-function tryPick(gm: number) { if (pickExceeds(S.notes, S.brush, gm, pickFor)) { swapGm = gm; renderPicker(); $('#swap').scrollIntoView({ block: 'nearest' }); toast(`Up to ${MAX_SOUNDS} sounds at once — swap one?`); return false; } applyPick(gm); return true; }
+function pickSound(gm: number) { AL().gm = gm; save(); renderAll(); loadGM(gm, ac()).then(() => preview(AL().notes[0]?.p ?? 60, gm)); toast(`Lane ${S.active + 1}: ${sname(gm)}`); }
 
 // ---------- beats + tempo
 function renderBeats() { $('#beats').innerHTML = [`<button data-id="" class="${!S.beat ? 'on' : ''}">🚫 None</button>`, ...GROOVES.map(p => `<button data-id="${p.id}" class="${S.beat === p.id ? 'on' : ''}">${p.name}</button>`)].join('');
@@ -130,35 +136,39 @@ function renderTempo() { $<HTMLInputElement>('#bpm').value = String(S.bpm); $('#
 
 // ---------- export
 const dl = (blob: Blob, name: string) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
-export async function buildMidi() { const { Midi } = await import('@tonejs/midi'); const m = new Midi(); m.header.setTempo(S.bpm); let ch = 0;
-  const tracks = splitByInstrument([{ name: 'Melody', inst: 'melody', gm: null as number | null, notes: S.notes }, { name: 'Drums', inst: 'drums', notes: drumNotes().map(n => ({ ...n, d: .25 })) }], gmLabel);
-  for (const t of tracks) { if (!t.notes.length) continue; const mt = m.addTrack(); mt.name = t.name; const drum = t.inst === 'drums'; if (!drum && ch === 9) ch++; mt.channel = drum ? 9 : ch++; if (!drum) mt.instrument.number = t.gm ?? 0;
-    for (const n of t.notes) mt.addNote({ midi: n.p, time: n.s * spb(), duration: n.d * spb(), velocity: n.v }); }
+export async function buildMidi() { const { Midi } = await import('@tonejs/midi'); const m = new Midi(); m.header.setTempo(S.bpm);
+  S.lanes.forEach((l, i) => { if (!l.notes.length) return; const mt = m.addTrack(); mt.name = `Lane ${i + 1} - ${gmLabel(l.gm)}`; mt.channel = i; mt.instrument.number = l.gm;
+    for (const n of l.notes) mt.addNote({ midi: n.p, time: n.s * spb(), duration: n.d * spb(), velocity: n.v }); });
+  const dn = drumNotes(); if (dn.length) { const dt = m.addTrack(); dt.name = 'Drums'; dt.channel = 9; for (const n of dn) dt.addNote({ midi: n.p, time: n.s * spb(), duration: .25 * spb(), velocity: n.v }); }
   return new Blob([m.toArray() as BlobPart], { type: 'audio/midi' }); }
-async function renderWav() { const c = ac(); toast('Preparing sounds…'); await Promise.all([loadKit(S.kit, c), ...[...new Set(S.notes.map(n => n.gm))].map(g => loadGM(g, c))]);
-  const beats = S.notes.length ? Math.max(notesEnd(), S.beat ? songBeats() : 0) : S.beat ? songBeats() : 0; if (!beats) { toast('Nothing to export yet — hum a note first.'); return; }
+async function renderWav() { const c = ac(); toast('Preparing sounds…'); await Promise.all([loadKit(S.kit, c), ...S.lanes.map(l => loadGM(l.gm, c))]);
+  const beats = notesEnd() ? Math.max(notesEnd(), S.beat ? songBeats() : 0) : S.beat ? songBeats() : 0; if (!beats) { toast('Nothing to export yet — hum a note first.'); return; }
   const sr = 44100; const oc = new OfflineAudioContext(2, Math.ceil((beats * spb() + 2.5) * sr), sr); const mg = oc.createGain(); mg.connect(oc.createDynamicsCompressor()).connect(oc.destination);
   const ms = makeStrip(oc, mg, S.bpm), ds = makeStrip(oc, mg, S.bpm); ms.update({ reverb: .15 } as any, .8, 0, true); ds.update({ reverb: .05 } as any, .75, 0, true);
-  for (const n of S.notes) playMel(oc, ms.input, n, n.s * spb() + .05, n.d * spb());
+  for (const l of S.lanes) for (const n of l.notes) playMel(oc, ms.input, { ...n, gm: l.gm }, n.s * spb() + .05, n.d * spb());
   for (const n of drumNotes()) if (n.s < beats) playDrum(oc, ds.input, n.p, n.s * spb() + .05, n.v);
   dl(encodeWav(await oc.startRendering()), 'hum-studio.wav'); toast('Saved hum-studio.wav'); }
 
 // ---------- wiring
-{ const lane = $('#lane'); const pts = new Map<number, number>(); let tgt: Note | null = null, mode = '', x0 = 0, d0 = 1, pd0 = 0, moved = false;
-  lane.addEventListener('pointerdown', e => { const el = (e.target as Element).closest('.nb') as HTMLElement | null; pts.set(e.pointerId, e.clientX);
+{ const lane = $('#lane'); const pts = new Map<number, number>(); let tgt: Note | null = null, tl = 0, mode = '', x0 = 0, d0 = 1, pd0 = 0, moved = false;
+  lane.addEventListener('pointerdown', e => { const t = e.target as Element; const el = t.closest('.nb') as HTMLElement | null; pts.set(e.pointerId, e.clientX);
     if (pts.size === 2 && sel) { mode = 'pinch'; tgt = sel; d0 = sel.d; const a = [...pts.values()]; pd0 = Math.abs(a[0] - a[1]) || 1; return; }
-    if (!el) { mode = ''; return; } lane.setPointerCapture(e.pointerId); tgt = S.notes[+el.dataset.i!]; x0 = e.clientX; d0 = tgt.d; moved = false; mode = (e.target as Element).closest('[data-grip]') ? 'grip' : 'tap'; e.preventDefault(); });
-  lane.addEventListener('pointermove', e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, e.clientX); if (!tgt) return;
-    if (mode === 'pinch' && pts.size === 2) { const a = [...pts.values()]; stretch(tgt, d0 * Math.abs(a[0] - a[1]) / pd0); return; }
-    if (mode === 'grip') { moved = true; stretch(tgt, d0 + (e.clientX - x0) / BW); } else if (mode === 'tap' && Math.abs(e.clientX - x0) > 8) { moved = true; lane.scrollLeft -= e.clientX - x0; x0 = e.clientX; } });
-  const up = (e: PointerEvent) => { pts.delete(e.pointerId); if (pts.size) return; if (tgt && mode !== 'pinch' && !moved) { sel = sel === tgt ? null : tgt; if (sel) { preview(sel); S.brush = sel.gm; } renderAll(); } tgt = null; mode = ''; };
+    lane.setPointerCapture(e.pointerId); x0 = e.clientX; moved = false;
+    if (!el) { const r = $('#blocks').getBoundingClientRect(); tl = Math.max(0, Math.min(LANES - 1, Math.floor((e.clientY - r.top) / r.height * LANES))); tgt = null; mode = 'row'; return; }
+    tl = +el.dataset.l!; tgt = S.lanes[tl].notes[+el.dataset.i!]; d0 = tgt.d; mode = t.closest('[data-grip]') ? 'grip' : 'tap'; e.preventDefault(); });
+  lane.addEventListener('pointermove', e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, e.clientX);
+    if (mode === 'pinch' && tgt && pts.size === 2) { const a = [...pts.values()]; stretch(tgt, d0 * Math.abs(a[0] - a[1]) / pd0); return; }
+    if (mode === 'grip' && tgt) { moved = true; stretch(tgt, d0 + (e.clientX - x0) / BW); } else if ((mode === 'tap' || mode === 'row') && (moved || Math.abs(e.clientX - x0) > 8)) { moved = true; lane.scrollLeft -= e.clientX - x0; x0 = e.clientX; } });
+  const up = (e: PointerEvent) => { pts.delete(e.pointerId); if (pts.size) return;
+    if (!moved && mode === 'row') { sel = null; if (tl !== S.active) setActive(tl); else renderAll(); }
+    if (!moved && mode === 'tap' && tgt) { const n = tgt; if (tl !== S.active) { S.active = tl; save(); } sel = sel === n ? null : n; if (sel) preview(sel.p, S.lanes[tl].gm); renderAll(); }
+    tgt = null; mode = ''; };
   lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up); }
 $('#hum').onclick = () => toggleMic(); $('#yes').onclick = keep; $('#no').onclick = discard; $('#del').onclick = del;
-$('#tsound').onclick = () => sel && openPicker(sel);
-$('#sounds').onclick = e => { const b = (e.target as Element).closest('[data-gm]') as HTMLElement | null; if (!b) return; if (b.dataset.gm === 'more') openPicker(sel); else { pickFor = sel; applyPick(+b.dataset.gm!); } };
-$('#plist').onclick = $('#pinuse').onclick = e => { const b = (e.target as Element).closest('[data-gm]') as HTMLElement | null; if (b && tryPick(+b.dataset.gm!)) closePicker(); };
-$('#swap').onclick = e => { const b = (e.target as Element).closest('[data-out]') as HTMLElement | null; if (!b || swapGm === null) return; const g = swapGm; swapGm = null;
-  if (b.dataset.out !== 'x') { swapSound(S.notes, +b.dataset.out!, g); if (S.brush === +b.dataset.out!) S.brush = g; applyPick(g); closePicker(); toast(`Swapped in ${sname(g)}`); } else renderPicker(); };
+$('#sounds').onclick = e => { const b = (e.target as Element).closest('button') as HTMLElement | null; if (!b) return; if (b.dataset.gm === 'more') openPicker(); else setActive(+b.dataset.l!); };
+$('#labels').onclick = e => { const b = (e.target as Element).closest('[data-l]') as HTMLElement | null; if (!b) return; if (+b.dataset.l! === S.active) openPicker(); else setActive(+b.dataset.l!); };
+$('#pinuse').onclick = e => { const b = (e.target as Element).closest('[data-pl]') as HTMLElement | null; if (b) { setActive(+b.dataset.pl!); renderPicker(); } };
+$('#plist').onclick = e => { const b = (e.target as Element).closest('[data-gm]') as HTMLElement | null; if (b) { pickSound(+b.dataset.gm!); closePicker(); } };
 $('#search').oninput = renderPicker; $('#pclose').onclick = closePicker; $('#picker').onclick = e => { if (e.target === $('#picker')) closePicker(); };
 $('#addbar').onclick = () => { S.bars++; save(); renderSong(); requestAnimationFrame(() => { const l = $('#lane'); l.scrollLeft = l.scrollWidth; }); };
 $('#play').onclick = () => playing ? stop() : play();
